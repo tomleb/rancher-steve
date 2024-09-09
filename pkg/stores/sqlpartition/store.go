@@ -9,7 +9,6 @@ import (
 	"github.com/rancher/apiserver/pkg/types"
 	lassopartition "github.com/rancher/lasso/pkg/cache/sql/partition"
 	"github.com/rancher/steve/pkg/accesscontrol"
-	"github.com/rancher/steve/pkg/attributes"
 	"github.com/rancher/steve/pkg/stores/partition"
 )
 
@@ -146,7 +145,7 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 
 		for range c {
 			response <- types.APIEvent{
-				ResourceType: attributes.GVK(schema).String(),
+				ResourceType: schema.ID,
 			}
 		}
 	}()

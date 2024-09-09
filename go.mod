@@ -4,7 +4,7 @@ go 1.22.0
 
 toolchain go1.22.7
 
-replace github.com/rancher/lasso => ../lasso
+replace github.com/rancher/lasso => github.com/tomleb/rancher-lasso v0.0.0-20240906163555-e567f1ea2d53
 
 replace (
 	github.com/crewjam/saml => github.com/rancher/saml v0.2.0

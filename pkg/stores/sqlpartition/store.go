@@ -5,11 +5,15 @@ package sqlpartition
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"github.com/rancher/apiserver/pkg/types"
 	"github.com/rancher/steve/pkg/accesscontrol"
 	cachepartition "github.com/rancher/steve/pkg/sqlcache/partition"
 	"github.com/rancher/steve/pkg/stores/partition"
+	"github.com/rancher/wrangler/v3/pkg/kv"
+	"k8s.io/apimachinery/pkg/watch"
 )
 
 // Partitioner is an interface for interacting with partitions.
@@ -143,10 +147,80 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 	go func() {
 		defer close(response)
 
-		for i := range c {
-			response <- partition.ToAPIEvent(nil, schema, i)
+		if wr.Mode == types.ModeNotification {
+			idNamespace, _ := kv.RSplit(wr.ID, "/")
+			if idNamespace == "" {
+				idNamespace = apiOp.Namespace
+			}
+
+			debouncer := newDebouncer(wr.DebounceRate, c)
+			go debouncer.Run(apiOp.Context())
+			for range debouncer.NotificationsChan() {
+				response <- types.APIEvent{
+					Name:      "resource.changes",
+					Namespace: idNamespace,
+					ID:        wr.ID,
+					Selector:  wr.Selector,
+					Mode:      wr.Mode,
+				}
+			}
+		} else {
+			for i := range c {
+				response <- partition.ToAPIEvent(nil, schema, i)
+			}
 		}
 	}()
 
 	return response, nil
+}
+
+type debouncer struct {
+	lock sync.Mutex
+
+	timer     *time.Timer
+	isStarted bool
+
+	debounceRate time.Duration
+
+	eventsCh chan watch.Event
+
+	notificationCh chan struct{}
+}
+
+func newDebouncer(debouceRate time.Duration, eventsCh chan watch.Event) *debouncer {
+	d := &debouncer{
+		debounceRate:   debouceRate,
+		timer:          time.NewTimer(debouceRate),
+		eventsCh:       eventsCh,
+		notificationCh: make(chan struct{}),
+	}
+	d.timer.Stop()
+	return d
+}
+
+func (d *debouncer) Run(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			close(d.notificationCh)
+			return
+		case <-d.eventsCh:
+			d.lock.Lock()
+			if !d.isStarted {
+				d.isStarted = true
+				d.timer.Reset(d.debounceRate)
+			}
+			d.lock.Unlock()
+		case <-d.timer.C:
+			d.lock.Lock()
+			d.notificationCh <- struct{}{}
+			d.timer.Stop()
+			d.isStarted = false
+			d.lock.Unlock()
+		}
+	}
+}
+
+func (d *debouncer) NotificationsChan() chan struct{} {
+	return d.notificationCh
 }

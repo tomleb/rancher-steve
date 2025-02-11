@@ -31,7 +31,7 @@ type Informer struct {
 
 type ByOptionsLister interface {
 	ListByOptions(ctx context.Context, lo *sqltypes.ListOptions, partitions []partition.Partition, namespace string) (*unstructured.UnstructuredList, int, string, error)
-	Watch(ctx context.Context, revision string, eventsCh chan<- watch.Event) error
+	Watch(ctx context.Context, options WatchOptions, eventsCh chan<- watch.Event) error
 }
 
 // this is set to a var so that it can be overridden by test code for mocking purposes

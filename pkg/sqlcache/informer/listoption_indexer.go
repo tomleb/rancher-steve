@@ -19,6 +19,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
@@ -26,6 +27,11 @@ import (
 	"github.com/rancher/steve/pkg/sqlcache/db"
 	"github.com/rancher/steve/pkg/sqlcache/partition"
 )
+
+type watcher struct {
+	ch      chan<- watch.Event
+	options WatchOptions
+}
 
 // ListOptionIndexer extends Indexer by allowing queries based on ListOption
 type ListOptionIndexer struct {
@@ -35,7 +41,7 @@ type ListOptionIndexer struct {
 	indexedFields []string
 
 	// TODO: mutex on watchers
-	watchers map[string]chan<- watch.Event
+	watchers map[string]*watcher
 
 	latestRV string
 
@@ -130,7 +136,7 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 		Indexer:       i,
 		namespaced:    namespaced,
 		indexedFields: indexedFields,
-		watchers:      make(map[string]chan<- watch.Event),
+		watchers:      make(map[string]*watcher),
 	}
 	l.RegisterAfterUpsert(l.addEventUpsert)
 	l.RegisterAfterUpsert(l.addIndexFields)
@@ -225,7 +231,14 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 	return l, nil
 }
 
-func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, eventsCh chan<- watch.Event) error {
+type WatchOptions struct {
+	ResourceVersion string
+	ID              string
+	Selector        string
+	Namespace       string
+}
+
+func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, eventsCh chan<- watch.Event) error {
 	// TODO: Detect not found
 	// TODO: Ensure nothing is added to store while we're backfilling events AND
 	// registering the watcher
@@ -233,7 +246,7 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, e
 	id := uuid.New().String()
 	// Backfilling previous events from resourceVersion
 	err := l.WithTransaction(ctx, false, func(tx transaction.Client) error {
-		rows, err := tx.Stmt(l.listEventsAfterRVStmt).QueryContext(ctx, resourceVersion)
+		rows, err := tx.Stmt(l.listEventsAfterRVStmt).QueryContext(ctx, opts.ResourceVersion)
 		if err != nil {
 			return fmt.Errorf("list events after rv: %w", err)
 		}
@@ -262,7 +275,10 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, e
 			eventsCh <- event
 		}
 
-		l.watchers[id] = eventsCh
+		l.watchers[id] = &watcher{
+			ch:      eventsCh,
+			options: opts,
+		}
 		return nil
 	})
 	if err != nil {
@@ -320,7 +336,11 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, obj any, tx tran
 		return &db.QueryError{QueryString: l.addEventQuery, Err: err}
 	}
 	for _, watcher := range l.watchers {
-		watcher <- watch.Event{
+		if !matchFilters(watcher.options.ID, watcher.options.Namespace, watcher.options.Selector, obj) {
+			continue
+		}
+
+		watcher.ch <- watch.Event{
 			Type:   eventType,
 			Object: obj.(runtime.Object),
 		}
@@ -1097,4 +1117,31 @@ func toUnstructuredList(items []any, rv string) *unstructured.UnstructuredList {
 		objectItems[i] = item.(*unstructured.Unstructured).Object
 	}
 	return result
+}
+
+func matchFilters(filterName string, filterNamespace string, filterSelector string, obj any) bool {
+	if obj == nil {
+		return false
+	}
+	metadata, err := meta.Accessor(obj)
+	if err != nil {
+		return false
+	}
+	if filterName != "" && filterName != metadata.GetName() {
+		return false
+	}
+	if filterNamespace != "" && filterNamespace != metadata.GetNamespace() {
+		return false
+	}
+	if filterSelector != "" {
+		selector, err := labels.Parse(filterSelector)
+		if err != nil {
+			fmt.Println("error parsing selector", err)
+			return false
+		}
+		if !selector.Matches(labels.Set(metadata.GetLabels())) {
+			return false
+		}
+	}
+	return true
 }

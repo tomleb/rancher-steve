@@ -251,6 +251,8 @@ type Store struct {
 	lock             sync.Mutex
 	columnSetter     SchemaColumnSetter
 	transformBuilder TransformBuilder
+
+	watchers *Watchers
 }
 
 type CacheFactoryInitializer func() (CacheFactory, error)
@@ -268,6 +270,7 @@ func NewProxyStore(ctx context.Context, c SchemaColumnSetter, clientGetter Clien
 		notifier:         notifier,
 		columnSetter:     c,
 		transformBuilder: virtual.NewTransformBuilder(scache),
+		watchers:         newWatchers(),
 	}
 
 	if factory == nil {
@@ -592,18 +595,45 @@ func (s *Store) WatchNames(apiOp *types.APIRequest, schema *types.APISchema, w t
 // Watch returns a channel of events for a list or resource.
 func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, w types.WatchRequest) (chan watch.Event, error) {
 	buffer := &WarningBuffer{}
-	client, err := s.clientGetter.TableClientForWatch(apiOp, schema, apiOp.Namespace, buffer)
+	client, err := s.clientGetter.TableAdminClientForWatch(apiOp, schema, apiOp.Namespace, buffer)
 	if err != nil {
 		return nil, err
 	}
 	return s.watch(apiOp, schema, w, client)
 }
 
+type Watchers struct {
+	watchers map[string]struct{}
+}
+
+func newWatchers() *Watchers {
+	return &Watchers{
+		watchers: make(map[string]struct{}),
+	}
+}
+
 func (s *Store) watch(apiOp *types.APIRequest, schema *types.APISchema, w types.WatchRequest, client dynamic.ResourceInterface) (chan watch.Event, error) {
+	// warnings from inside the informer are discarded
+	gvk := attributes.GVK(schema)
+	fields := getFieldsFromSchema(schema)
+	fields = append(fields, getFieldForGVK(gvk)...)
+	transformFunc := s.transformBuilder.GetTransformFunc(gvk)
+	tableClient := &tablelistconvert.Client{ResourceInterface: client}
+	attrs := attributes.GVK(schema)
+	ns := attributes.Namespaced(schema)
+	inf, err := s.cacheFactory.CacheFor(fields, transformFunc, tableClient, attrs, ns, controllerschema.IsListWatchable(schema))
+	if err != nil {
+		return nil, err
+	}
+
 	result := make(chan watch.Event)
 	go func() {
-		s.listAndWatch(apiOp, client, schema, w, result)
-		logrus.Debugf("closing watcher for %s", schema.ID)
+		ctx := apiOp.Context()
+		err := inf.ByOptionsLister.Watch(ctx, w.Revision, result)
+		if err != nil {
+			logrus.Error(err)
+		}
+
 		close(result)
 	}()
 	return result, nil
@@ -761,7 +791,7 @@ func (s *Store) Delete(apiOp *types.APIRequest, schema *types.APISchema, id stri
 //   - the total number of resources (returned list might be a subset depending on pagination options in apiOp)
 //   - a continue token, if there are more pages after the returned one
 //   - an error instead of all of the above if anything went wrong
-func (s *Store) ListByPartitions(apiOp *types.APIRequest, schema *types.APISchema, partitions []partition.Partition) ([]unstructured.Unstructured, int, string, error) {
+func (s *Store) ListByPartitions(apiOp *types.APIRequest, schema *types.APISchema, partitions []partition.Partition) (*unstructured.UnstructuredList, int, string, error) {
 	opts, err := listprocessor.ParseQuery(apiOp, s.namespaceCache)
 	if err != nil {
 		return nil, 0, "", err
@@ -792,7 +822,7 @@ func (s *Store) ListByPartitions(apiOp *types.APIRequest, schema *types.APISchem
 		return nil, 0, "", err
 	}
 
-	return list.Items, total, continueToken, nil
+	return list, total, continueToken, nil
 }
 
 // WatchByPartitions returns a channel of events for a list or resource belonging to any of the specified partitions

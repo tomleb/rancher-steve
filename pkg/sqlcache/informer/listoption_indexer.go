@@ -1,11 +1,13 @@
 package informer
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -14,7 +16,10 @@ import (
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/rancher/steve/pkg/sqlcache/db"
@@ -28,15 +33,24 @@ type ListOptionIndexer struct {
 	namespaced    bool
 	indexedFields []string
 
-	addFieldQuery     string
-	deleteFieldQuery  string
-	upsertLabelsQuery string
-	deleteLabelsQuery string
+	// TODO: mutex on watchers
+	watchers map[string]chan<- watch.Event
 
-	addFieldStmt     *sql.Stmt
-	deleteFieldStmt  *sql.Stmt
-	upsertLabelsStmt *sql.Stmt
-	deleteLabelsStmt *sql.Stmt
+	latestRV string
+
+	addEventQuery          string
+	addFieldQuery          string
+	deleteFieldQuery       string
+	upsertLabelsQuery      string
+	deleteLabelsQuery      string
+	listEventsAfterRVQuery string
+
+	addEventStmt          *sql.Stmt
+	addFieldStmt          *sql.Stmt
+	deleteFieldStmt       *sql.Stmt
+	upsertLabelsStmt      *sql.Stmt
+	deleteLabelsStmt      *sql.Stmt
+	listEventsAfterRVStmt *sql.Stmt
 }
 
 var (
@@ -56,6 +70,22 @@ const (
             %s
 	   )`
 	createFieldsIndexFmt = `CREATE INDEX "%s_%s_index" ON "%s_fields"("%s")`
+
+	createEventsTableFmt = `CREATE TABLE "%s_events" (
+			rv TEXT NOT NULL,
+			type TEXT NOT NULL,
+	                event BLOB NOT NULL,
+	                PRIMARY KEY (type, rv)
+	   )`
+	listEventsAfterRVFmt = `
+	SELECT type, rv, event
+	FROM "%s_events"
+	WHERE rowid > (
+		SELECT rowid
+		FROM "%s_events"
+		WHERE rv = ?
+	);
+	`
 
 	failedToGetFromSliceFmt = "[listoption indexer] failed to get subfield [%s] from slice items: %w"
 
@@ -99,9 +129,12 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 		Indexer:       i,
 		namespaced:    namespaced,
 		indexedFields: indexedFields,
+		watchers:      make(map[string]chan<- watch.Event),
 	}
+	l.RegisterAfterUpsert(l.addEventUpsert)
 	l.RegisterAfterUpsert(l.addIndexFields)
 	l.RegisterAfterUpsert(l.addLabels)
+	l.RegisterAfterDelete(l.addEventDeleted)
 	l.RegisterAfterDelete(l.deleteIndexFields)
 	l.RegisterAfterDelete(l.deleteLabels)
 	columnDefs := make([]string, len(indexedFields))
@@ -145,6 +178,12 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 			return &db.QueryError{QueryString: createLabelsTableQuery, Err: err}
 		}
 
+		createEventsTableQuery := fmt.Sprintf(createEventsTableFmt, dbName)
+		_, err = tx.Exec(createEventsTableQuery)
+		if err != nil {
+			return &db.QueryError{QueryString: createEventsTableQuery, Err: err}
+		}
+
 		createLabelsTableIndexQuery := fmt.Sprintf(createLabelsTableIndexFmt, dbName, dbName)
 		_, err = tx.Exec(createLabelsTableIndexQuery)
 		if err != nil {
@@ -157,6 +196,10 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 		return nil, err
 	}
 
+	l.addEventQuery = fmt.Sprintf(
+		`INSERT INTO "%s_events"(rv, type, event) VALUES (?, ?, ?)`,
+		dbName,
+	)
 	l.addFieldQuery = fmt.Sprintf(
 		`INSERT INTO "%s_fields"(key, %s) VALUES (?, %s) ON CONFLICT DO UPDATE SET %s`,
 		dbName,
@@ -165,6 +208,10 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 		strings.Join(setStatements, ", "),
 	)
 	l.deleteFieldQuery = fmt.Sprintf(`DELETE FROM "%s_fields" WHERE key = ?`, dbName)
+
+	l.listEventsAfterRVQuery = fmt.Sprintf(listEventsAfterRVFmt, dbName, dbName)
+	l.listEventsAfterRVStmt = l.Prepare(l.listEventsAfterRVQuery)
+	l.addEventStmt = l.Prepare(l.addEventQuery)
 
 	l.addFieldStmt = l.Prepare(l.addFieldQuery)
 	l.deleteFieldStmt = l.Prepare(l.deleteFieldQuery)
@@ -177,10 +224,111 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 	return l, nil
 }
 
+func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, eventsCh chan<- watch.Event) error {
+	// TODO: Detect not found
+	// TODO: Ensure nothing is added to store while we're backfilling events AND
+	// registering the watcher
+	var events []watch.Event
+	// Backfilling previous events from resourceVersion
+	err := l.WithTransaction(ctx, false, func(tx transaction.Client) error {
+		rows, err := tx.Stmt(l.listEventsAfterRVStmt).QueryContext(ctx, resourceVersion)
+		if err != nil {
+			return fmt.Errorf("list events after rv: %w", err)
+		}
+		for rows.Next() {
+			// example.SetGroupVersionKind()
+
+			var typ, rv string
+			var buf sql.RawBytes
+			err := rows.Scan(&typ, &rv, &buf)
+			if err != nil {
+				return fmt.Errorf("scanning event row: %w", err)
+			}
+
+			example := &unstructured.Unstructured{}
+			val, err := fromBytes(buf, reflect.TypeOf(example))
+			if err != nil {
+				return fmt.Errorf("decoding event object: %w", err)
+			}
+
+			events = append(events, watch.Event{
+				Type:   watch.EventType(typ),
+				Object: val.Elem().Interface().(runtime.Object),
+			})
+		}
+
+		for _, event := range events {
+			eventsCh <- event
+		}
+
+		l.watchers["hi"] = eventsCh
+		return nil
+	})
+	if err != nil {
+		delete(l.watchers, "hi")
+		// TODO: Unregister watcher here
+		return fmt.Errorf("failed sql: %w", err)
+	}
+	<-ctx.Done()
+	delete(l.watchers, "hi")
+
+	return nil
+}
+
 /* Core methods */
 
+func (l *ListOptionIndexer) addEventUpsert(key string, obj any, isNew bool, tx transaction.Client) error {
+	if isNew {
+		return l.addEvent(watch.Added, obj, tx)
+	}
+	return l.addEvent(watch.Modified, obj, tx)
+}
+
+func (l *ListOptionIndexer) addEventDeleted(key string, obj any, tx transaction.Client) error {
+	return l.addEvent(watch.Deleted, obj, tx)
+}
+
+func toBytes(obj any) []byte {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(obj)
+	if err != nil {
+		panic(fmt.Errorf("error while gobbing object: %w", err))
+	}
+	bb := buf.Bytes()
+	return bb
+}
+
+func fromBytes(buf sql.RawBytes, typ reflect.Type) (reflect.Value, error) {
+	dec := gob.NewDecoder(bytes.NewReader(buf))
+	singleResult := reflect.New(typ)
+	err := dec.DecodeValue(singleResult)
+	return singleResult, err
+}
+
+func (l *ListOptionIndexer) addEvent(eventType watch.EventType, obj any, tx transaction.Client) error {
+	acc, err := meta.Accessor(obj)
+	if err != nil {
+		return fmt.Errorf("wrong type: %w", err)
+	}
+	l.latestRV = acc.GetResourceVersion()
+
+	// TODO: We want to encrypt this most likely..
+	_, err = tx.Stmt(l.addEventStmt).Exec(l.latestRV, eventType, toBytes(obj))
+	if err != nil {
+		return &db.QueryError{QueryString: l.addEventQuery, Err: err}
+	}
+	for _, watcher := range l.watchers {
+		watcher <- watch.Event{
+			Type:   eventType,
+			Object: obj.(runtime.Object),
+		}
+	}
+	return nil
+}
+
 // addIndexFields saves sortable/filterable fields into tables
-func (l *ListOptionIndexer) addIndexFields(key string, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) addIndexFields(key string, obj any, _ bool, tx transaction.Client) error {
 	args := []any{key}
 	for _, field := range l.indexedFields {
 		value, err := getField(obj, field)
@@ -209,7 +357,7 @@ func (l *ListOptionIndexer) addIndexFields(key string, obj any, tx transaction.C
 }
 
 // labels are stored in tables that shadow the underlying object table for each GVK
-func (l *ListOptionIndexer) addLabels(key string, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) addLabels(key string, obj any, _ bool, tx transaction.Client) error {
 	k8sObj, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return fmt.Errorf("addLabels: unexpected object type, expected unstructured.Unstructured: %v", obj)
@@ -224,7 +372,7 @@ func (l *ListOptionIndexer) addLabels(key string, obj any, tx transaction.Client
 	return nil
 }
 
-func (l *ListOptionIndexer) deleteIndexFields(key string, tx transaction.Client) error {
+func (l *ListOptionIndexer) deleteIndexFields(key string, _ any, tx transaction.Client) error {
 	args := []any{key}
 
 	_, err := tx.Stmt(l.deleteFieldStmt).Exec(args...)
@@ -234,7 +382,7 @@ func (l *ListOptionIndexer) deleteIndexFields(key string, tx transaction.Client)
 	return nil
 }
 
-func (l *ListOptionIndexer) deleteLabels(key string, tx transaction.Client) error {
+func (l *ListOptionIndexer) deleteLabels(key string, _ any, tx transaction.Client) error {
 	_, err := tx.Stmt(l.deleteLabelsStmt).Exec(key)
 	if err != nil {
 		return &db.QueryError{QueryString: l.deleteLabelsQuery, Err: err}
@@ -514,7 +662,7 @@ func (l *ListOptionIndexer) executeQuery(ctx context.Context, queryInfo *QueryIn
 		continueToken = fmt.Sprintf("%d", offset+limit)
 	}
 
-	return toUnstructuredList(items), total, continueToken, nil
+	return toUnstructuredList(items, l.latestRV), total, continueToken, nil
 }
 
 func (l *ListOptionIndexer) validateColumn(column string) error {
@@ -937,11 +1085,11 @@ func isLabelsFieldList(fields []string) bool {
 }
 
 // toUnstructuredList turns a slice of unstructured objects into an unstructured.UnstructuredList
-func toUnstructuredList(items []any) *unstructured.UnstructuredList {
+func toUnstructuredList(items []any, rv string) *unstructured.UnstructuredList {
 	objectItems := make([]map[string]any, len(items))
 	result := &unstructured.UnstructuredList{
 		Items:  make([]unstructured.Unstructured, len(items)),
-		Object: map[string]interface{}{"items": objectItems},
+		Object: map[string]interface{}{"items": objectItems, "rv": rv},
 	}
 	for i, item := range items {
 		result.Items[i] = *item.(*unstructured.Unstructured)

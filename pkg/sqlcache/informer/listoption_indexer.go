@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
 	"github.com/sirupsen/logrus"
@@ -229,6 +230,7 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, e
 	// TODO: Ensure nothing is added to store while we're backfilling events AND
 	// registering the watcher
 	var events []watch.Event
+	id := uuid.New().String()
 	// Backfilling previous events from resourceVersion
 	err := l.WithTransaction(ctx, false, func(tx transaction.Client) error {
 		rows, err := tx.Stmt(l.listEventsAfterRVStmt).QueryContext(ctx, resourceVersion)
@@ -236,8 +238,6 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, e
 			return fmt.Errorf("list events after rv: %w", err)
 		}
 		for rows.Next() {
-			// example.SetGroupVersionKind()
-
 			var typ, rv string
 			var buf sql.RawBytes
 			err := rows.Scan(&typ, &rv, &buf)
@@ -246,6 +246,7 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, e
 			}
 
 			example := &unstructured.Unstructured{}
+			// example.SetGroupVersionKind()
 			val, err := fromBytes(buf, reflect.TypeOf(example))
 			if err != nil {
 				return fmt.Errorf("decoding event object: %w", err)
@@ -261,16 +262,16 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, resourceVersion string, e
 			eventsCh <- event
 		}
 
-		l.watchers["hi"] = eventsCh
+		l.watchers[id] = eventsCh
 		return nil
 	})
 	if err != nil {
-		delete(l.watchers, "hi")
+		delete(l.watchers, id)
 		// TODO: Unregister watcher here
 		return fmt.Errorf("failed sql: %w", err)
 	}
 	<-ctx.Done()
-	delete(l.watchers, "hi")
+	delete(l.watchers, id)
 
 	return nil
 }

@@ -283,7 +283,6 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 	})
 	if err != nil {
 		delete(l.watchers, id)
-		// TODO: Unregister watcher here
 		return fmt.Errorf("failed sql: %w", err)
 	}
 	<-ctx.Done()
@@ -296,13 +295,23 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 
 func (l *ListOptionIndexer) addEventUpsert(key string, obj any, isNew bool, tx transaction.Client) error {
 	if isNew {
-		return l.addEvent(watch.Added, obj, tx)
+		return l.addEvent(watch.Added, nil, obj, tx)
 	}
-	return l.addEvent(watch.Modified, obj, tx)
+
+	// TODO: Use transaction
+	oldObj, exists, err := l.GetByKey(key)
+	if err != nil {
+		return fmt.Errorf("error getting old object: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("old object %q should be in store but was not", key)
+	}
+
+	return l.addEvent(watch.Modified, oldObj, obj, tx)
 }
 
 func (l *ListOptionIndexer) addEventDeleted(key string, obj any, tx transaction.Client) error {
-	return l.addEvent(watch.Deleted, obj, tx)
+	return l.addEvent(watch.Deleted, nil, obj, tx)
 }
 
 func toBytes(obj any) []byte {
@@ -323,7 +332,7 @@ func fromBytes(buf sql.RawBytes, typ reflect.Type) (reflect.Value, error) {
 	return singleResult, err
 }
 
-func (l *ListOptionIndexer) addEvent(eventType watch.EventType, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj any, tx transaction.Client) error {
 	acc, err := meta.Accessor(obj)
 	if err != nil {
 		return fmt.Errorf("wrong type: %w", err)
@@ -336,7 +345,7 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, obj any, tx tran
 		return &db.QueryError{QueryString: l.addEventQuery, Err: err}
 	}
 	for _, watcher := range l.watchers {
-		if !matchFilters(watcher.options.ID, watcher.options.Namespace, watcher.options.Selector, obj) {
+		if !matchWatch(watcher.options.ID, watcher.options.Namespace, watcher.options.Selector, oldObj, obj) {
 			continue
 		}
 
@@ -1119,7 +1128,15 @@ func toUnstructuredList(items []any, rv string) *unstructured.UnstructuredList {
 	return result
 }
 
-func matchFilters(filterName string, filterNamespace string, filterSelector string, obj any) bool {
+func matchWatch(filterName string, filterNamespace string, filterSelector string, oldObj any, obj any) bool {
+	matchOld := false
+	if oldObj != nil {
+		matchOld = matchFilter(filterName, filterNamespace, filterSelector, oldObj)
+	}
+	return matchOld || matchFilter(filterName, filterNamespace, filterSelector, obj)
+}
+
+func matchFilter(filterName string, filterNamespace string, filterSelector string, obj any) bool {
 	if obj == nil {
 		return false
 	}

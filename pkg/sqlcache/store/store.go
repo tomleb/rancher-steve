@@ -278,10 +278,10 @@ func (s *Store) replaceByKey(objects map[string]any) error {
 			if err != nil {
 				return err
 			}
-			err = s.runAfterDelete(key, txC)
-			if err != nil {
-				return err
-			}
+			// err = s.runAfterDelete(key, obj, txC)
+			// if err != nil {
+			// 	return err
+			// }
 		}
 
 		for key, obj := range objects {

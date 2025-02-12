@@ -157,16 +157,19 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 			go debouncer.Run(apiOp.Context())
 			for range debouncer.NotificationsChan() {
 				response <- types.APIEvent{
-					Name:      "resource.changes",
-					Namespace: idNamespace,
-					ID:        wr.ID,
-					Selector:  wr.Selector,
-					Mode:      wr.Mode,
+					Name:         "resource.changes",
+					Namespace:    idNamespace,
+					ResourceType: schema.PluralName,
+					ID:           wr.ID,
+					Selector:     wr.Selector,
+					Mode:         wr.Mode,
 				}
 			}
 		} else {
 			for i := range c {
-				response <- partition.ToAPIEvent(nil, schema, i)
+				resp := partition.ToAPIEvent(nil, schema, i)
+				resp.ResourceType = schema.PluralName
+				response <- resp
 			}
 		}
 	}()

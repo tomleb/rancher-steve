@@ -159,7 +159,7 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 				response <- types.APIEvent{
 					Name:         "resource.changes",
 					Namespace:    idNamespace,
-					ResourceType: schema.PluralName,
+					ResourceType: wr.ResourceType,
 					ID:           wr.ID,
 					Selector:     wr.Selector,
 					Mode:         wr.Mode,
@@ -168,7 +168,7 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 		} else {
 			for i := range c {
 				resp := partition.ToAPIEvent(nil, schema, i)
-				resp.ResourceType = schema.PluralName
+				resp.ResourceType = wr.ResourceType
 				response <- resp
 			}
 		}

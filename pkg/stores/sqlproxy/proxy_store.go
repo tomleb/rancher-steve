@@ -622,7 +622,7 @@ func (s *Store) watch(apiOp *types.APIRequest, schema *types.APISchema, w types.
 	tableClient := &tablelistconvert.Client{ResourceInterface: client}
 	attrs := attributes.GVK(schema)
 	ns := attributes.Namespaced(schema)
-	inf, err := s.cacheFactory.CacheFor(fields, transformFunc, tableClient, attrs, ns, controllerschema.IsListWatchable(schema))
+	inf, err := s.cacheFactory.CacheFor(s.ctx, fields, transformFunc, tableClient, attrs, ns, controllerschema.IsListWatchable(schema))
 	if err != nil {
 		return nil, err
 	}

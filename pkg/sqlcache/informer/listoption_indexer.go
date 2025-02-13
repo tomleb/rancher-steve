@@ -365,7 +365,7 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 
 		watcher.ch <- watch.Event{
 			Type:   eventType,
-			Object: obj.(runtime.Object),
+			Object: obj.(runtime.Object).DeepCopyObject(),
 		}
 	}
 	l.watchersLock.RUnlock()

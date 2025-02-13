@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
@@ -40,8 +41,8 @@ type ListOptionIndexer struct {
 	namespaced    bool
 	indexedFields []string
 
-	// TODO: mutex on watchers
-	watchers map[string]*watcher
+	watchersLock sync.RWMutex
+	watchers     map[string]*watcher
 
 	latestRV string
 
@@ -275,20 +276,32 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 			eventsCh <- event
 		}
 
-		l.watchers[id] = &watcher{
+		l.setWatcher(id, &watcher{
 			ch:      eventsCh,
 			options: opts,
-		}
+		})
 		return nil
 	})
 	if err != nil {
-		delete(l.watchers, id)
+		l.removeWatcher(id)
 		return fmt.Errorf("failed sql: %w", err)
 	}
 	<-ctx.Done()
-	delete(l.watchers, id)
+	l.removeWatcher(id)
 
 	return nil
+}
+
+func (l *ListOptionIndexer) setWatcher(id string, watcher *watcher) {
+	l.watchersLock.Lock()
+	l.watchers[id] = watcher
+	l.watchersLock.Unlock()
+}
+
+func (l *ListOptionIndexer) removeWatcher(id string) {
+	l.watchersLock.Lock()
+	delete(l.watchers, id)
+	l.watchersLock.Unlock()
 }
 
 /* Core methods */
@@ -344,6 +357,7 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 	if err != nil {
 		return &db.QueryError{QueryString: l.addEventQuery, Err: err}
 	}
+	l.watchersLock.RLock()
 	for _, watcher := range l.watchers {
 		if !matchWatch(watcher.options.ID, watcher.options.Namespace, watcher.options.Selector, oldObj, obj) {
 			continue
@@ -354,6 +368,7 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 			Object: obj.(runtime.Object),
 		}
 	}
+	l.watchersLock.RUnlock()
 	return nil
 }
 

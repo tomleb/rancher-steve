@@ -627,7 +627,7 @@ func (s *Store) watch(apiOp *types.APIRequest, schema *types.APISchema, w types.
 		return nil, err
 	}
 
-	result := make(chan watch.Event)
+	result := make(chan watch.Event, 1000)
 	go func() {
 		ctx := apiOp.Context()
 		idNamespace, _ := kv.RSplit(w.ID, "/")

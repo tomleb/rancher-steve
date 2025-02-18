@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
+	sqllog "github.com/rancher/steve/pkg/sqlcache/log"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -37,6 +38,8 @@ type watcher struct {
 // ListOptionIndexer extends Indexer by allowing queries based on ListOption
 type ListOptionIndexer struct {
 	*Indexer
+
+	name string
 
 	namespaced    bool
 	indexedFields []string
@@ -114,6 +117,7 @@ const (
 // ListOptionIndexer is also able to satisfy ListOption queries on indexed (sub)fields.
 // Fields are specified as slices (e.g. "metadata.resourceVersion" is ["metadata", "resourceVersion"])
 func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, namespaced bool) (*ListOptionIndexer, error) {
+	sqllog.Debugln(s.GetName(), "NewListOptionIndexer", fields, namespaced)
 	// necessary in order to gob/ungob unstructured.Unstructured objects
 	gob.Register(map[string]interface{}{})
 	gob.Register([]interface{}{})
@@ -135,6 +139,7 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 	}
 
 	l := &ListOptionIndexer{
+		name:          s.GetName(),
 		Indexer:       i,
 		namespaced:    namespaced,
 		indexedFields: indexedFields,
@@ -352,6 +357,7 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 		return fmt.Errorf("wrong type: %w", err)
 	}
 	latestRV := acc.GetResourceVersion()
+	sqllog.Debugf(l.name, "AddEvent type=%v,rv=%v,object=%v", eventType, latestRV, obj)
 
 	// TODO: We want to encrypt this most likely..
 	_, err = tx.Stmt(l.addEventStmt).Exec(latestRV, eventType, toBytes(obj))
@@ -372,6 +378,7 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 	l.watchersLock.RUnlock()
 
 	l.latestRVLock.Lock()
+	sqllog.Debugf(l.name, "Setting latest RV=%s", latestRV)
 	l.latestRV = latestRV
 	l.latestRVLock.Unlock()
 	return nil

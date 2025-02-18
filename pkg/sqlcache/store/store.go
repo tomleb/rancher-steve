@@ -12,6 +12,7 @@ import (
 	"github.com/rancher/lasso/pkg/log"
 	"github.com/rancher/steve/pkg/sqlcache/db"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
+	sqllog "github.com/rancher/steve/pkg/sqlcache/log"
 	"k8s.io/client-go/tools/cache"
 
 	// needed for drivers
@@ -167,6 +168,7 @@ func (s *Store) Add(obj any) error {
 		return err
 	}
 
+	sqllog.Debugf(s.GetName(), "Store.Add key=%s", key)
 	err = s.upsert(key, obj, true)
 	if err != nil {
 		log.Errorf("Error in Store.Add for type %v: %v", s.name, err)
@@ -182,6 +184,7 @@ func (s *Store) Update(obj any) error {
 		return err
 	}
 
+	sqllog.Debugf(s.GetName(), "Store.Update key=%s", key)
 	err = s.upsert(key, obj, false)
 	if err != nil {
 		log.Errorf("Error in Store.Update for type %v: %v", s.name, err)
@@ -196,6 +199,7 @@ func (s *Store) Delete(obj any) error {
 	if err != nil {
 		return err
 	}
+	sqllog.Debugf(s.GetName(), "Store.Delete key=%s", key)
 	err = s.deleteByKey(key, obj)
 	if err != nil {
 		log.Errorf("Error in Store.Delete for type %v: %v", s.name, err)
@@ -249,6 +253,7 @@ func (s *Store) Get(obj any) (item any, exists bool, err error) {
 func (s *Store) Replace(objects []any, _ string) error {
 	objectMap := map[string]any{}
 
+	sqllog.Debugf(s.GetName(), "Store.Replace length=%d", len(objects))
 	for _, object := range objects {
 		key, err := s.keyFunc(object)
 		if err != nil {

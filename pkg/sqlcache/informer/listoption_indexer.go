@@ -44,7 +44,8 @@ type ListOptionIndexer struct {
 	watchersLock sync.RWMutex
 	watchers     map[string]*watcher
 
-	latestRV string
+	latestRVLock sync.RWMutex
+	latestRV     string
 
 	addEventQuery          string
 	addFieldQuery          string
@@ -350,10 +351,10 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 	if err != nil {
 		return fmt.Errorf("wrong type: %w", err)
 	}
-	l.latestRV = acc.GetResourceVersion()
+	latestRV := acc.GetResourceVersion()
 
 	// TODO: We want to encrypt this most likely..
-	_, err = tx.Stmt(l.addEventStmt).Exec(l.latestRV, eventType, toBytes(obj))
+	_, err = tx.Stmt(l.addEventStmt).Exec(latestRV, eventType, toBytes(obj))
 	if err != nil {
 		return &db.QueryError{QueryString: l.addEventQuery, Err: err}
 	}
@@ -369,6 +370,10 @@ func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj 
 		}
 	}
 	l.watchersLock.RUnlock()
+
+	l.latestRVLock.Lock()
+	l.latestRV = latestRV
+	l.latestRVLock.Unlock()
 	return nil
 }
 
@@ -707,7 +712,10 @@ func (l *ListOptionIndexer) executeQuery(ctx context.Context, queryInfo *QueryIn
 		continueToken = fmt.Sprintf("%d", offset+limit)
 	}
 
-	return toUnstructuredList(items, l.latestRV), total, continueToken, nil
+	l.latestRVLock.RLock()
+	latestRV := l.latestRV
+	l.latestRVLock.RUnlock()
+	return toUnstructuredList(items, latestRV), total, continueToken, nil
 }
 
 func (l *ListOptionIndexer) validateColumn(column string) error {

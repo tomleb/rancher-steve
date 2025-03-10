@@ -73,6 +73,7 @@ func indexSubjects(kind string, subjects []rbacv1.Subject) []string {
 		} else if kind == userKind && subjectIsServiceAccount(subject) {
 			// Index is for Users and this references a service account
 			result = append(result, fmt.Sprintf("serviceaccount:%s:%s", subject.Namespace, subject.Name))
+			result = append(result, fmt.Sprintf("system:serviceaccount:%s:%s", subject.Namespace, subject.Name))
 		}
 	}
 	return result

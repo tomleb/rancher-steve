@@ -354,7 +354,7 @@ func fromBytes(buf sql.RawBytes, typ reflect.Type) (reflect.Value, error) {
 func (l *ListOptionIndexer) addEvent(eventType watch.EventType, oldObj any, obj any, tx transaction.Client) error {
 	acc, err := meta.Accessor(obj)
 	if err != nil {
-		return fmt.Errorf("wrong type: %w", err)
+		return fmt.Errorf("wrong type: %w (Type=%T, Object=%+v)", err, obj, obj)
 	}
 	latestRV := acc.GetResourceVersion()
 	sqllog.Debugf(l.name, "AddEvent type=%v,rv=%v,object=%v", eventType, latestRV, obj)

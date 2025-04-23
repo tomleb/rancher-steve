@@ -5,6 +5,7 @@ package sqlproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,10 +15,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/rancher/steve/pkg/stores/queryhelper"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -497,7 +498,7 @@ func (s *Store) listAndWatch(apiOp *types.APIRequest, client dynamic.ResourceInt
 		LabelSelector:   w.Selector,
 	})
 	if err != nil {
-		returnErr(errors.Wrapf(err, "stopping watch for %s: %v", schema.ID, err), result)
+		returnErr(fmt.Errorf("stopping watch for %s: %w", schema.ID, err), result)
 		return
 	}
 	defer watcher.Stop()
@@ -518,7 +519,7 @@ func (s *Store) listAndWatch(apiOp *types.APIRequest, client dynamic.ResourceInt
 					rowToObject(obj)
 					result <- watch.Event{Type: watch.Modified, Object: obj}
 				} else {
-					returnErr(errors.Wrapf(err, "notifier watch error: %v", err), result)
+					returnErr(fmt.Errorf("notifier watch error: %w", err), result)
 				}
 			}
 			return fmt.Errorf("closed")
@@ -643,7 +644,15 @@ func (s *Store) watch(apiOp *types.APIRequest, schema *types.APISchema, w types.
 		}
 		err := inf.ByOptionsLister.Watch(ctx, opts, result)
 		if err != nil {
-			logrus.Error(err)
+			var statusError *apierrors.StatusError
+			if errors.As(err, &statusError) {
+				result <- watch.Event{
+					Type:   watch.Error,
+					Object: &statusError.ErrStatus,
+				}
+			} else {
+				logrus.Error(err)
+			}
 		}
 
 		close(result)

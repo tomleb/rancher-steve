@@ -19,6 +19,7 @@ import (
 	sqllog "github.com/rancher/steve/pkg/sqlcache/log"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
 	"github.com/sirupsen/logrus"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -276,6 +277,14 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 				Type:   watch.EventType(typ),
 				Object: val.Elem().Interface().(runtime.Object),
 			})
+		}
+
+		l.latestRVLock.RLock()
+		latestRV := l.latestRV
+		l.latestRVLock.RUnlock()
+
+		if len(events) == 0 && latestRV != opts.ResourceVersion {
+			return apierrors.NewResourceExpired("resourceversion too old")
 		}
 
 		for _, event := range events {

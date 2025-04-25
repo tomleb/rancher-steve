@@ -23,6 +23,7 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
+	restclient "k8s.io/client-go/rest"
 	"k8s.io/component-base/version"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
 	"k8s.io/kube-openapi/pkg/validation/spec"
@@ -108,6 +109,8 @@ type ExtensionAPIServer struct {
 
 	handlerMu sync.RWMutex
 	handler   http.Handler
+
+	loopbackClientConfig *restclient.Config
 }
 
 type emptyAddresses struct{}
@@ -184,11 +187,12 @@ func NewExtensionAPIServer(scheme *runtime.Scheme, codecs serializer.CodecFactor
 	}
 
 	extensionAPIServer := &ExtensionAPIServer{
-		codecs:           codecs,
-		scheme:           scheme,
-		genericAPIServer: genericServer,
-		apiGroups:        make(map[string]genericapiserver.APIGroupInfo),
-		authorizer:       opts.Authorizer,
+		codecs:               codecs,
+		scheme:               scheme,
+		genericAPIServer:     genericServer,
+		apiGroups:            make(map[string]genericapiserver.APIGroupInfo),
+		authorizer:           opts.Authorizer,
+		loopbackClientConfig: completedConfig.LoopbackClientConfig,
 	}
 
 	return extensionAPIServer, nil
@@ -220,6 +224,10 @@ func (s *ExtensionAPIServer) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	s.handlerMu.RLock()
 	defer s.handlerMu.RUnlock()
 	s.handler.ServeHTTP(w, req)
+}
+
+func (s *ExtensionAPIServer) LoopbackClientConfig() *restclient.Config {
+	return s.loopbackClientConfig
 }
 
 // GetAuthorizer returns the authorizer used by the extension server to authorize

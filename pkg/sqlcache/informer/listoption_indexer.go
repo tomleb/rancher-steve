@@ -254,7 +254,16 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 	id := uuid.New().String()
 	// Backfilling previous events from resourceVersion
 	err := l.WithTransaction(ctx, false, func(tx transaction.Client) error {
-		rows, err := tx.Stmt(l.listEventsAfterRVStmt).QueryContext(ctx, opts.ResourceVersion)
+		l.latestRVLock.RLock()
+		latestRV := l.latestRV
+		l.latestRVLock.RUnlock()
+
+		targetRV := opts.ResourceVersion
+		if opts.ResourceVersion == "" {
+			targetRV = latestRV
+		}
+
+		rows, err := tx.Stmt(l.listEventsAfterRVStmt).QueryContext(ctx, targetRV)
 		if err != nil {
 			return fmt.Errorf("list events after rv: %w", err)
 		}
@@ -279,11 +288,7 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 			})
 		}
 
-		l.latestRVLock.RLock()
-		latestRV := l.latestRV
-		l.latestRVLock.RUnlock()
-
-		if len(events) == 0 && latestRV != opts.ResourceVersion {
+		if len(events) == 0 && latestRV != targetRV {
 			return apierrors.NewResourceExpired("resourceversion too old")
 		}
 

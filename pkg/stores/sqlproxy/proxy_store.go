@@ -556,7 +556,7 @@ func (s *Store) listAndWatch(apiOp *types.APIRequest, client dynamic.ResourceInt
 // be returned in watch.
 func (s *Store) WatchNames(apiOp *types.APIRequest, schema *types.APISchema, w types.WatchRequest, names sets.Set[string]) (chan watch.Event, error) {
 	buffer := &WarningBuffer{}
-	adminClient, err := s.clientGetter.TableAdminClientForWatch(apiOp, schema, apiOp.Namespace, buffer)
+	adminClient, err := s.clientGetter.TableAdminClientForWatch(apiOp, schema, "", buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -597,7 +597,7 @@ func (s *Store) WatchNames(apiOp *types.APIRequest, schema *types.APISchema, w t
 // Watch returns a channel of events for a list or resource.
 func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, w types.WatchRequest) (chan watch.Event, error) {
 	buffer := &WarningBuffer{}
-	client, err := s.clientGetter.TableAdminClientForWatch(apiOp, schema, apiOp.Namespace, buffer)
+	client, err := s.clientGetter.TableAdminClientForWatch(apiOp, schema, "", buffer)
 	if err != nil {
 		return nil, err
 	}

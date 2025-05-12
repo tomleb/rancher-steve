@@ -177,11 +177,18 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 	return response, nil
 }
 
+type DebouncerState int
+
+const (
+	FirstNotification DebouncerState = iota
+	TimerStarted
+	TimerStopped
+)
+
 type debouncer struct {
 	lock sync.Mutex
 
-	timer     *time.Timer
-	isStarted bool
+	timer *time.Timer
 
 	debounceRate time.Duration
 
@@ -202,6 +209,7 @@ func newDebouncer(debouceRate time.Duration, eventsCh chan watch.Event) *debounc
 }
 
 func (d *debouncer) Run(ctx context.Context) {
+	state := FirstNotification
 	for {
 		select {
 		case <-ctx.Done():
@@ -209,8 +217,12 @@ func (d *debouncer) Run(ctx context.Context) {
 			return
 		case <-d.eventsCh:
 			d.lock.Lock()
-			if !d.isStarted {
-				d.isStarted = true
+			switch state {
+			case FirstNotification:
+				d.notificationCh <- struct{}{}
+				state = TimerStopped
+			case TimerStopped:
+				state = TimerStarted
 				d.timer.Reset(d.debounceRate)
 			}
 			d.lock.Unlock()
@@ -218,7 +230,7 @@ func (d *debouncer) Run(ctx context.Context) {
 			d.lock.Lock()
 			d.notificationCh <- struct{}{}
 			d.timer.Stop()
-			d.isStarted = false
+			state = TimerStopped
 			d.lock.Unlock()
 		}
 	}

@@ -155,14 +155,30 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 
 			debouncer := newDebouncer(wr.DebounceRate, c)
 			go debouncer.Run(apiOp.Context())
-			for range debouncer.NotificationsChan() {
-				response <- types.APIEvent{
-					Name:         "resource.changes",
-					Namespace:    idNamespace,
-					ResourceType: wr.ResourceType,
-					ID:           wr.ID,
-					Selector:     wr.Selector,
-					Mode:         wr.Mode,
+		loop:
+			for {
+				select {
+				case _, ok := <-debouncer.NotificationsChan():
+					if !ok {
+						break loop
+					}
+
+					response <- types.APIEvent{
+						Name:         "resource.changes",
+						Namespace:    idNamespace,
+						ResourceType: wr.ResourceType,
+						ID:           wr.ID,
+						Selector:     wr.Selector,
+						Mode:         wr.Mode,
+					}
+				case err, ok := <-debouncer.ErrorChan():
+					if !ok {
+						break loop
+					}
+
+					resp := partition.ToAPIEvent(nil, schema, err)
+					resp.ResourceType = wr.ResourceType
+					response <- resp
 				}
 			}
 		} else {
@@ -195,6 +211,7 @@ type debouncer struct {
 	eventsCh chan watch.Event
 
 	notificationCh chan struct{}
+	errorCh        chan watch.Event
 }
 
 func newDebouncer(debouceRate time.Duration, eventsCh chan watch.Event) *debouncer {
@@ -203,6 +220,7 @@ func newDebouncer(debouceRate time.Duration, eventsCh chan watch.Event) *debounc
 		timer:          time.NewTimer(debouceRate),
 		eventsCh:       eventsCh,
 		notificationCh: make(chan struct{}),
+		errorCh:        make(chan watch.Event),
 	}
 	d.timer.Stop()
 	return d
@@ -210,12 +228,21 @@ func newDebouncer(debouceRate time.Duration, eventsCh chan watch.Event) *debounc
 
 func (d *debouncer) Run(ctx context.Context) {
 	state := FirstNotification
+loop:
 	for {
 		select {
 		case <-ctx.Done():
-			close(d.notificationCh)
-			return
-		case <-d.eventsCh:
+			break loop
+		case ev, ok := <-d.eventsCh:
+			if ev.Type == watch.Error {
+				d.errorCh <- ev
+				break loop
+			}
+
+			if !ok {
+				break loop
+			}
+
 			d.lock.Lock()
 			switch state {
 			case FirstNotification:
@@ -234,8 +261,16 @@ func (d *debouncer) Run(ctx context.Context) {
 			d.lock.Unlock()
 		}
 	}
+
+	close(d.notificationCh)
+	close(d.errorCh)
+	return
 }
 
 func (d *debouncer) NotificationsChan() chan struct{} {
 	return d.notificationCh
+}
+
+func (d *debouncer) ErrorChan() chan watch.Event {
+	return d.errorCh
 }

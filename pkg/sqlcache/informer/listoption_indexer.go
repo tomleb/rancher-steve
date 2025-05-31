@@ -60,7 +60,7 @@ const (
 	failedToGetFromSliceFmt = "[listoption indexer] failed to get subfield [%s] from slice items"
 
 	createLabelsTableFmt = `CREATE TABLE IF NOT EXISTS "%s_labels" (
-		key TEXT NOT NULL REFERENCES "%s"(key) ON DELETE CASCADE,
+		key TEXT NOT NULL,
 		label TEXT NOT NULL,
 		value TEXT NOT NULL,
 		PRIMARY KEY (key, label)
@@ -141,7 +141,7 @@ func NewListOptionIndexer(ctx context.Context, fields [][]string, s Store, names
 			setStatement := fmt.Sprintf(`"%s" = excluded."%s"`, field, field)
 			setStatements[index] = setStatement
 		}
-		createLabelsTableQuery := fmt.Sprintf(createLabelsTableFmt, dbName, dbName)
+		createLabelsTableQuery := fmt.Sprintf(createLabelsTableFmt, dbName)
 		_, err = tx.Exec(createLabelsTableQuery)
 		if err != nil {
 			return &db.QueryError{QueryString: createLabelsTableQuery, Err: err}

@@ -12,6 +12,7 @@ import (
 	"github.com/rancher/lasso/pkg/log"
 	"github.com/rancher/steve/pkg/sqlcache/db"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/tools/cache"
 
 	// needed for drivers
@@ -19,17 +20,27 @@ import (
 )
 
 const (
-	upsertStmtFmt   = `REPLACE INTO "%s"(key, object, objectnonce, dekid) VALUES (?, ?, ?, ?)`
-	deleteStmtFmt   = `DELETE FROM "%s" WHERE key = ?`
+	upsertStmtFmt   = `REPLACE INTO "%s"(rv, key, object, objectnonce, dekid) VALUES (?, ?, ?, ?, ?)`
+	deleteStmtFmt   = `DELETE FROM "%s" WHERE rv = ? AND key = ?`
 	getStmtFmt      = `SELECT object, objectnonce, dekid FROM "%s" WHERE key = ?`
 	listStmtFmt     = `SELECT object, objectnonce, dekid FROM "%s"`
 	listKeysStmtFmt = `SELECT key FROM "%s"`
 	createTableFmt  = `CREATE TABLE IF NOT EXISTS "%s" (
-		key TEXT UNIQUE NOT NULL PRIMARY KEY,
+		rv TEXT NOT NULL,
+		key TEXT NOT NULL,
 		object BLOB,
 		objectnonce BLOB,
-		dekid INTEGER
+		dekid INTEGER,
+
+		PRIMARY KEY (rv, key)
 	)`
+	createListTableFmt = `CREATE TABLE IF NOT EXISTS "%s_lists" (
+		list_rv TEXT NOT NULL,
+		rv TEXT NOT NULL,
+		key TEXT NOT NULL
+	)`
+
+	//FOREIGN KEY (rv, key) REFERENCES "%s"
 )
 
 // Store is a SQLite-backed cache.Store
@@ -86,6 +97,12 @@ func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Clie
 			return &db.QueryError{QueryString: createTableQuery, Err: err}
 		}
 
+		createListTableQuery := fmt.Sprintf(createListTableFmt, dbName)
+		_, err = tx.Exec(createListTableQuery)
+		if err != nil {
+			return &db.QueryError{QueryString: createListTableQuery, Err: err}
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -112,15 +129,27 @@ func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Clie
 // deleteByKey deletes the object associated with key, if it exists in this Store
 func (s *Store) deleteByKey(key string) error {
 	return s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
-		_, err := tx.Stmt(s.deleteStmt).Exec(key)
-		if err != nil {
-			return &db.QueryError{QueryString: s.deleteQuery, Err: err}
-		}
+		// _, err := tx.Stmt(s.deleteStmt).Exec(key)
+		// if err != nil {
+		// 	return &db.QueryError{QueryString: s.deleteQuery, Err: err}
+		// }
 
-		err = s.runAfterDelete(key, tx)
+		dbName := "_v1_Namespace"
+		q := fmt.Sprintf(`
+INSERT INTO "%s_lists" 
+SELECT concat(list_rv, 'delete'), rv, key
+FROM "%s_lists" WHERE key <> ? AND list_rv = (
+	SELECT rv FROM "%s_lists" WHERE rowid = (SELECT MAX(rowid) FROM "%s_lists")
+)`, dbName, dbName, dbName, dbName)
+		_, err := tx.Exec(q, key)
 		if err != nil {
 			return err
 		}
+
+		// err = s.runAfterDelete(key, tx)
+		// if err != nil {
+		// 	return err
+		// }
 
 		return nil
 	})
@@ -154,9 +183,34 @@ func (s *Store) Add(obj any) error {
 	}
 
 	err = s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
-		err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt)
+		acc, err := meta.Accessor(obj)
+		if err != nil {
+			return err
+		}
+
+		err = s.Upsert(tx, s.upsertStmt, acc.GetResourceVersion(), key, obj, s.shouldEncrypt)
 		if err != nil {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
+		}
+
+		dbName := "_v1_Namespace"
+		q := fmt.Sprintf(`
+INSERT INTO "%s_lists" 
+SELECT ?, rv, key
+FROM "%s_lists" WHERE list_rv = (
+	SELECT rv FROM "%s_lists" WHERE rowid = (SELECT MAX(rowid) FROM "%s_lists")
+)`, dbName, dbName, dbName, dbName)
+		_, err = tx.Exec(q, acc.GetResourceVersion())
+		if err != nil {
+			return err
+		}
+
+		q = fmt.Sprintf(`
+INSERT INTO "%s_lists" 
+VALUES (?, ?, ?)`, dbName)
+		_, err = tx.Exec(q, acc.GetResourceVersion(), acc.GetResourceVersion(), key)
+		if err != nil {
+			return err
 		}
 
 		err = s.runAfterAdd(key, obj, tx)
@@ -181,9 +235,32 @@ func (s *Store) Update(obj any) error {
 	}
 
 	err = s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
-		err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt)
+		acc, err := meta.Accessor(obj)
+		if err != nil {
+			return err
+		}
+
+		err = s.Upsert(tx, s.upsertStmt, acc.GetResourceVersion(), key, obj, s.shouldEncrypt)
 		if err != nil {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
+		}
+
+		dbName := "_v1_Namespace"
+		q := fmt.Sprintf(`
+INSERT INTO "%s_lists" 
+SELECT ?, rv, key
+FROM "%s_lists" WHERE list_rv = (
+	SELECT rv FROM "%s_lists" WHERE rowid = (SELECT MAX(rowid) FROM "%s_lists")
+)`, dbName, dbName, dbName, dbName)
+		_, err = tx.Exec(q, acc.GetResourceVersion())
+		if err != nil {
+			return err
+		}
+
+		q = fmt.Sprintf(`UPDATE "%s_lists" SET rv = ? WHERE list_rv = ? AND key = ?`, dbName)
+		_, err = tx.Exec(q, acc.GetResourceVersion(), acc.GetResourceVersion(), key)
+		if err != nil {
+			return err
 		}
 
 		err = s.runAfterUpdate(key, obj, tx)
@@ -206,6 +283,7 @@ func (s *Store) Delete(obj any) error {
 	if err != nil {
 		return err
 	}
+
 	err = s.deleteByKey(key)
 	if err != nil {
 		log.Errorf("Error in Store.Delete for type %v: %v", s.name, err)
@@ -295,10 +373,36 @@ func (s *Store) replaceByKey(objects map[string]any) error {
 		}
 
 		for key, obj := range objects {
-			err = s.Upsert(txC, s.upsertStmt, key, obj, s.shouldEncrypt)
+			acc, err := meta.Accessor(obj)
 			if err != nil {
 				return err
 			}
+
+			err = s.Upsert(txC, s.upsertStmt, acc.GetResourceVersion(), key, obj, s.shouldEncrypt)
+			if err != nil {
+				return err
+			}
+
+			dbName := "_v1_Namespace"
+			q := fmt.Sprintf(`
+INSERT INTO "%s_lists" 
+SELECT ?, key
+FROM "%s_lists" WHERE rv = (
+	SELECT rv FROM "%s_lists" WHERE rowid = (SELECT MAX(rowid) FROM "%s_lists")
+)`, dbName, dbName, dbName, dbName)
+			_, err = txC.Exec(q, acc.GetResourceVersion())
+			if err != nil {
+				return err
+			}
+
+			q = fmt.Sprintf(`
+INSERT INTO "%s_lists" 
+VALUES (?, ?)`, dbName)
+			_, err = txC.Exec(q, acc.GetResourceVersion(), acc.GetResourceVersion())
+			if err != nil {
+				return err
+			}
+
 			err = s.runAfterAdd(key, obj, txC)
 			if err != nil {
 				return err

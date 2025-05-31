@@ -25,7 +25,7 @@ const (
 	createTableFmt = `CREATE TABLE IF NOT EXISTS "%[1]s_indices" (
 			name TEXT NOT NULL,
 			value TEXT NOT NULL,
-			key TEXT NOT NULL REFERENCES "%[1]s"(key) ON DELETE CASCADE,
+			key TEXT NOT NULL,
 			PRIMARY KEY (name, value, key)
         )`
 	createIndexFmt = `CREATE INDEX IF NOT EXISTS "%[1]s_indices_index" ON "%[1]s_indices"(name, value)`

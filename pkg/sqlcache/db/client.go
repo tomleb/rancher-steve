@@ -38,7 +38,7 @@ type Client interface {
 	ReadObjects(rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error)
 	ReadStrings(rows Rows) ([]string, error)
 	ReadInt(rows Rows) (int, error)
-	Upsert(tx transaction.Client, stmt *sql.Stmt, key string, obj any, shouldEncrypt bool) error
+	Upsert(tx transaction.Client, stmt *sql.Stmt, rv string, key string, obj any, shouldEncrypt bool) error
 	CloseStmt(closable Closable) error
 	NewConnection() error
 }
@@ -288,7 +288,7 @@ func (c *client) decryptScan(rows Rows, shouldDecrypt bool) ([]byte, error) {
 
 // Upsert executes an upsert statement encrypting arguments if necessary
 // note the statement should have 4 parameters: key, objBytes, dataNonce, kid
-func (c *client) Upsert(tx transaction.Client, stmt *sql.Stmt, key string, obj any, shouldEncrypt bool) error {
+func (c *client) Upsert(tx transaction.Client, stmt *sql.Stmt, rv string, key string, obj any, shouldEncrypt bool) error {
 	objBytes := toBytes(obj)
 	var dataNonce []byte
 	var err error
@@ -300,7 +300,7 @@ func (c *client) Upsert(tx transaction.Client, stmt *sql.Stmt, key string, obj a
 		}
 	}
 
-	_, err = tx.Stmt(stmt).Exec(key, objBytes, dataNonce, kid)
+	_, err = tx.Stmt(stmt).Exec(rv, key, objBytes, dataNonce, kid)
 	return err
 }
 

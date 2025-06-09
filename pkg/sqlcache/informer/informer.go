@@ -7,6 +7,7 @@ package informer
 import (
 	"context"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/rancher/steve/pkg/sqlcache/db"
@@ -67,7 +68,9 @@ func NewInformer(ctx context.Context, client dynamic.ResourceInterface, fields [
 			a, err := client.List(ctx, options)
 			// We want the list to be consistent when there are going to be relists
 			sort.SliceStable(a.Items, func(i int, j int) bool {
-				return a.Items[i].GetResourceVersion() < a.Items[j].GetResourceVersion()
+				rvI, _ := strconv.Atoi(a.Items[i].GetResourceVersion())
+				rvJ, _ := strconv.Atoi(a.Items[j].GetResourceVersion())
+				return rvI < rvJ
 			})
 			return a, err
 		},

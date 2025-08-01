@@ -94,7 +94,7 @@ func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Clie
 	dbName := db.Sanitize(s.name)
 
 	// once multiple informer-factories are needed, this can accept the case where table already exists error is received
-	err := s.WithTransaction(ctx, true, func(tx transaction.Client) error {
+	err := s.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		createTableQuery := fmt.Sprintf(createTableFmt, dbName)
 		_, err := tx.Exec(createTableQuery)
 		if err != nil {
@@ -131,7 +131,7 @@ func isDBError(e error) bool {
 func (s *Store) checkUpdateExternalInfo(key string) {
 	for _, updateBlock := range []*sqltypes.ExternalGVKUpdates{s.externalUpdateInfo, s.selfUpdateInfo} {
 		if updateBlock != nil {
-			s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
+			s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
 				err := s.updateExternalInfo(tx, key, updateBlock)
 				if err != nil && !isDBError(err) {
 					// Just report and ignore errors
@@ -290,7 +290,7 @@ func (s *Store) overrideCheck(finalFieldName, sourceGVK, sourceKey, finalTargetV
 
 // deleteByKey deletes the object associated with key, if it exists in this Store
 func (s *Store) deleteByKey(key string, obj any) error {
-	return s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
+	return s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		_, err := tx.Stmt(s.deleteStmt).Exec(key)
 		if err != nil {
 			return &db.QueryError{QueryString: s.deleteQuery, Err: err}
@@ -311,7 +311,7 @@ func (s *Store) GetByKey(key string) (item any, exists bool, err error) {
 	if err != nil {
 		return nil, false, &db.QueryError{QueryString: s.getQuery, Err: err}
 	}
-	result, err := s.ReadObjects(rows, s.typ, s.shouldEncrypt)
+	result, err := s.ReadObjects(s.ctx, rows, s.typ, s.shouldEncrypt)
 	if err != nil {
 		return nil, false, err
 	}
@@ -334,7 +334,7 @@ func (s *Store) Add(obj any) error {
 		return err
 	}
 
-	err = s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
+	err = s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt)
 		if err != nil {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
@@ -362,7 +362,7 @@ func (s *Store) Update(obj any) error {
 		return err
 	}
 
-	err = s.WithTransaction(s.ctx, true, func(tx transaction.Client) error {
+	err = s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt)
 		if err != nil {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
@@ -404,7 +404,7 @@ func (s *Store) List() []any {
 	if err != nil {
 		panic(&db.QueryError{QueryString: s.listQuery, Err: err})
 	}
-	result, err := s.ReadObjects(rows, s.typ, s.shouldEncrypt)
+	result, err := s.ReadObjects(s.ctx, rows, s.typ, s.shouldEncrypt)
 	if err != nil {
 		panic(fmt.Errorf("error in Store.List: %w", err))
 	}
@@ -459,7 +459,7 @@ func (s *Store) Replace(objects []any, _ string) error {
 
 // replaceByKey will delete the contents of the Store, using instead the given key to obj map
 func (s *Store) replaceByKey(objects map[string]any) error {
-	return s.WithTransaction(s.ctx, true, func(txC transaction.Client) error {
+	return s.WithTransaction(s.ctx, true, func(ctx context.Context, txC transaction.Client) error {
 		_, err := txC.Stmt(s.deleteAllStmt).Exec()
 		if err != nil {
 			return &db.QueryError{QueryString: s.deleteAllQuery, Err: err}

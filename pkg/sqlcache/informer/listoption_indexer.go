@@ -195,7 +195,7 @@ func NewListOptionIndexer(ctx context.Context, s Store, opts ListOptionIndexerOp
 	qmarks := make([]string, len(indexedFields))
 	setStatements := make([]string, len(indexedFields))
 
-	err = l.WithTransaction(ctx, true, func(tx transaction.Client) error {
+	err = l.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		createEventsTableQuery := fmt.Sprintf(createEventsTableFmt, dbName)
 		_, err = tx.Exec(createEventsTableQuery)
 		if err != nil {
@@ -310,7 +310,7 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 	var key *watchKey
 	// Even though we're not writing in this transaction, we prevent other writes to SQL
 	// because we don't want to add more events while we're backfilling events, so we don't miss events
-	err := l.WithTransaction(ctx, true, func(tx transaction.Client) error {
+	err := l.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		rowIDRow := tx.Stmt(l.findEventsRowByRVStmt).QueryRowContext(ctx, targetRV)
 		if err := rowIDRow.Err(); err != nil {
 			return &db.QueryError{QueryString: l.findEventsRowByRVQuery, Err: err}
@@ -851,7 +851,7 @@ func (l *ListOptionIndexer) executeQuery(ctx context.Context, queryInfo *QueryIn
 	}()
 
 	var items []any
-	err = l.WithTransaction(ctx, false, func(tx transaction.Client) error {
+	err = l.WithTransaction(ctx, false, func(ctx context.Context, tx transaction.Client) error {
 		ctx, span := steveotel.Tracer.Start(ctx, "SQL transaction")
 		defer span.End()
 
@@ -864,7 +864,7 @@ func (l *ListOptionIndexer) executeQuery(ctx context.Context, queryInfo *QueryIn
 		elapsed := time.Since(now)
 		logLongQuery(elapsed, queryInfo.query, queryInfo.params)
 		span.AddEvent("query done")
-		items, err = l.ReadObjects(rows, l.GetType(), l.GetShouldEncrypt())
+		items, err = l.ReadObjects(ctx, rows, l.GetType(), l.GetShouldEncrypt())
 		if err != nil {
 			return fmt.Errorf("read objects: %w", err)
 		}
@@ -1454,7 +1454,7 @@ func (l *ListOptionIndexer) runGC(ctx context.Context, interval time.Duration, k
 	for {
 		select {
 		case <-ticker.C:
-			err := l.WithTransaction(ctx, true, func(tx transaction.Client) error {
+			err := l.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 				_, err := tx.Stmt(l.deleteEventsByCountStmt).Exec(keepCount)
 				if err != nil {
 					return &db.QueryError{QueryString: l.deleteEventsByCountQuery, Err: err}

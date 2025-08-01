@@ -82,7 +82,7 @@ type Store interface {
 func NewIndexer(ctx context.Context, indexers cache.Indexers, s Store) (*Indexer, error) {
 	dbName := db.Sanitize(s.GetName())
 
-	err := s.WithTransaction(ctx, true, func(tx transaction.Client) error {
+	err := s.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		createTableQuery := fmt.Sprintf(createTableFmt, dbName)
 		_, err := tx.Exec(createTableQuery)
 		if err != nil {
@@ -197,7 +197,7 @@ func (i *Indexer) Index(indexName string, obj any) (result []any, err error) {
 	if err != nil {
 		return nil, &db.QueryError{QueryString: query, Err: err}
 	}
-	return i.ReadObjects(rows, i.GetType(), i.GetShouldEncrypt())
+	return i.ReadObjects(i.ctx, rows, i.GetType(), i.GetShouldEncrypt())
 }
 
 // ByIndex returns the stored objects whose set of indexed values
@@ -207,7 +207,7 @@ func (i *Indexer) ByIndex(indexName, indexedValue string) ([]any, error) {
 	if err != nil {
 		return nil, &db.QueryError{QueryString: i.listByIndexQuery, Err: err}
 	}
-	return i.ReadObjects(rows, i.GetType(), i.GetShouldEncrypt())
+	return i.ReadObjects(i.ctx, rows, i.GetType(), i.GetShouldEncrypt())
 }
 
 // IndexKeys returns a list of the Store keys of the objects whose indexed values in the given index include the given indexed value

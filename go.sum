@@ -216,8 +216,6 @@ github.com/prometheus/common v0.62.0 h1:xasJaQlnWAeyHdUBeGjXmutelfJHWMRr+Fg4QszZ
 github.com/prometheus/common v0.62.0/go.mod h1:vyBcEuLSvWos9B1+CyL7JZ2up+uFzXhkqml0W5zIY1I=
 github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
-github.com/rancher/apiserver v0.6.3 h1:O77xSHtDNNq8j9+FjyoMoJNaNomnA/doYK9ON8bDeEA=
-github.com/rancher/apiserver v0.6.3/go.mod h1:hCNwZwGitxLDIFrhkN+8smoRXKYOJ9zqOCwIAX+sHcQ=
 github.com/rancher/dynamiclistener v0.7.0 h1:+jyfZ4lVamc1UbKWo8V8dhSPtCgRZYaY8nm7wiHeko4=
 github.com/rancher/dynamiclistener v0.7.0/go.mod h1:Q2YA42xp7Xc69JiSlJ8GpvLvze261T0iQ/TP4RdMCYk=
 github.com/rancher/kubernetes-provider-detector v0.1.5 h1:hWRAsWuJOemzGjz/XrbTlM7QmfO4OedvFE3QwXiH60I=
@@ -292,8 +290,6 @@ go.etcd.io/etcd/server/v3 v3.5.21/go.mod h1:G1mOzdwuzKT1VRL7SqRchli/qcFrtLBTAQ4l
 go.opencensus.io v0.21.0/go.mod h1:mSImk1erAIZhrmZN+AvHh14ztQfjbGwt4TtuofqLduU=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
-go.opentelemetry.io/contrib/bridges/otelslog v0.12.0 h1:lFM7SZo8Ce01RzRfnUFQZEYeWRf/MtOA3A5MobOqk2g=
-go.opentelemetry.io/contrib/bridges/otelslog v0.12.0/go.mod h1:Dw05mhFtrKAYu72Tkb3YBYeQpRUJ4quDgo2DQw3No5A=
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.58.0 h1:PS8wXpbyaDJQ2VDHHncMe9Vct0Zn1fEjpsjrLxGJoSc=
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.58.0/go.mod h1:HDBUsEjOuRC0EzKZ1bSaRGZWUBAzo+MhAcUUORSr4D0=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.58.0 h1:yd02MEjBdJkG3uabWP9apV+OuWRIXGDuJEUJbOHmCFU=
@@ -306,8 +302,6 @@ go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.33.0 h1:5pojm
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.33.0/go.mod h1:57gTHJSE5S1tqg+EKsLPlTWhpHMsWlVmer+LA926XiA=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.37.0 h1:bDMKF3RUSxshZ5OjOTi8rsHGaPKsAt76FaqgvIUySLc=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.37.0/go.mod h1:dDT67G/IkA46Mr2l9Uj7HsQVwsjASyV9SjGofsiUZDA=
-go.opentelemetry.io/otel/log v0.13.0 h1:yoxRoIZcohB6Xf0lNv9QIyCzQvrtGZklVbdCoyb7dls=
-go.opentelemetry.io/otel/log v0.13.0/go.mod h1:INKfG4k1O9CL25BaM1qLe0zIedOpvlS5Z7XgSbmN83E=
 go.opentelemetry.io/otel/metric v1.37.0 h1:mvwbQS5m0tbmqML4NqK+e3aDiO02vsf/WgbsdpcPoZE=
 go.opentelemetry.io/otel/metric v1.37.0/go.mod h1:04wGrZurHYKOc+RKeye86GwKiTb9FKm1WHtO+4EVr2E=
 go.opentelemetry.io/otel/sdk v1.37.0 h1:ItB0QUqnjesGRvNcmAcU0LyvkVyGJ2xftD29bWdDvKI=

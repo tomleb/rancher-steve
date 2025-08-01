@@ -20,6 +20,7 @@ import (
 
 	"errors"
 
+	"github.com/rancher/steve/pkg/otel"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
 
 	// needed for drivers
@@ -42,7 +43,7 @@ type Client interface {
 	WithTransaction(ctx context.Context, forWriting bool, f WithTransactionFunction) error
 	Prepare(stmt string) *sql.Stmt
 	QueryForRows(ctx context.Context, stmt transaction.Stmt, params ...any) (*sql.Rows, error)
-	ReadObjects(rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error)
+	ReadObjects(ctx context.Context, rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error)
 	ReadStrings(rows Rows) ([]string, error)
 	ReadStrings2(rows Rows) ([][]string, error)
 	ReadInt(rows Rows) (int, error)
@@ -72,17 +73,30 @@ func (c *client) WithTransaction(ctx context.Context, forWriting bool, f WithTra
 }
 
 func (c *client) withTransaction(ctx context.Context, forWriting bool, f WithTransactionFunction) error {
+	_, span := otel.Tracer.Start(ctx, "read lock")
 	c.connLock.RLock()
+	span.End()
+
+	ctx2, span := otel.Tracer.Start(ctx, "begin tx")
 	// note: this assumes _txlock=immediate in the connection string, see NewConnection
-	tx, err := c.conn.BeginTx(ctx, &sql.TxOptions{
+	tx, err := c.conn.BeginTx(ctx2, &sql.TxOptions{
 		ReadOnly: !forWriting,
 	})
+	span.End()
+
 	c.connLock.RUnlock()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 
-	if err = f(transaction.NewClient(tx)); err != nil {
+	theQuery := func() error {
+		ctx, span := otel.Tracer.Start(ctx, "running")
+		defer span.End()
+
+		return f(ctx, transaction.NewClient(tx))
+	}
+
+	if err = theQuery(); err != nil {
 		rerr := c.rollback(ctx, tx)
 		return errors.Join(err, rerr)
 	}
@@ -97,6 +111,9 @@ func (c *client) withTransaction(ctx context.Context, forWriting bool, f WithTra
 }
 
 func (c *client) commit(ctx context.Context, tx *sql.Tx) error {
+	ctx, span := otel.Tracer.Start(ctx, "commit")
+	defer span.End()
+
 	err := tx.Commit()
 	if errors.Is(err, sql.ErrTxDone) && ctx.Err() == context.Canceled {
 		return fmt.Errorf("commit failed due to canceled context")
@@ -105,6 +122,9 @@ func (c *client) commit(ctx context.Context, tx *sql.Tx) error {
 }
 
 func (c *client) rollback(ctx context.Context, tx *sql.Tx) error {
+	ctx, span := otel.Tracer.Start(ctx, "rollback")
+	defer span.End()
+
 	err := tx.Rollback()
 	if errors.Is(err, sql.ErrTxDone) && ctx.Err() == context.Canceled {
 		return fmt.Errorf("rollback failed due to canceled context")
@@ -113,7 +133,7 @@ func (c *client) rollback(ctx context.Context, tx *sql.Tx) error {
 }
 
 // WithTransactionFunction is a function that uses a transaction
-type WithTransactionFunction func(tx transaction.Client) error
+type WithTransactionFunction func(ctx context.Context, tx transaction.Client) error
 
 // client is the main implementation of Client. Other implementations exist for test purposes
 type client struct {
@@ -218,8 +238,11 @@ func (c *client) CloseStmt(closable Closable) error {
 
 // ReadObjects Scans the given rows, performs any necessary decryption, converts the data to objects of the given type,
 // and returns a slice of those objects.
-func (c *client) ReadObjects(rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error) {
+func (c *client) ReadObjects(ctx context.Context, rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error) {
+	ctx, span := otel.Tracer.Start(ctx, "taking the lock")
 	c.connLock.RLock()
+	span.End()
+
 	defer c.connLock.RUnlock()
 
 	var result []any

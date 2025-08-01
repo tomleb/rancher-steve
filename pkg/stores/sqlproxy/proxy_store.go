@@ -782,6 +782,7 @@ func (s *Store) Delete(apiOp *types.APIRequest, schema *types.APISchema, id stri
 func (s *Store) ListByPartitions(apiOp *types.APIRequest, apiSchema *types.APISchema, partitions []partition.Partition) (*unstructured.UnstructuredList, int, string, error) {
 	ctx, span := steveotel.Tracer.Start(apiOp.Context(), "ListByPartitions")
 	defer span.End()
+	apiOp = apiOp.WithContext(ctx)
 
 	// warnings from inside the informer are discarded
 	buffer := WarningBuffer{}
@@ -797,10 +798,14 @@ func (s *Store) ListByPartitions(apiOp *types.APIRequest, apiSchema *types.APISc
 	transformFunc := s.transformBuilder.GetTransformFunc(gvk, cols, attributes.IsCRD(apiSchema))
 	tableClient := &tablelistconvert.Client{ResourceInterface: client}
 	ns := attributes.Namespaced(apiSchema)
+
+	_, span2 := steveotel.Tracer.Start(apiOp.Context(), "CacheFor")
 	inf, err := s.cacheFactory.CacheFor(s.ctx, fields, externalGVKDependencies[gvk], selfGVKDependencies[gvk], transformFunc, tableClient, gvk, ns, controllerschema.IsListWatchable(apiSchema))
 	if err != nil {
+		span2.End()
 		return nil, 0, "", fmt.Errorf("cachefor %v: %w", gvk, err)
 	}
+	span2.End()
 
 	span.AddEvent("got cache")
 

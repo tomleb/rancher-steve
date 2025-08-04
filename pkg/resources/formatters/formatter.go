@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rancher/apiserver/pkg/types"
 	"github.com/rancher/norman/types/convert"
+	"github.com/rancher/steve/pkg/otel"
 	"github.com/rancher/wrangler/v3/pkg/data"
 	"github.com/sirupsen/logrus"
 )
@@ -26,6 +27,10 @@ var (
 )
 
 func HandleHelmData(request *types.APIRequest, resource *types.RawResource) {
+	ctx, span := otel.Tracer.Start(request.Context(), "Formatter HandleHelmData")
+	defer span.End()
+	request = request.WithContext(ctx)
+
 	objData := resource.APIObject.Data()
 	if q := request.Query.Get("includeHelmData"); q == "true" {
 		var helmReleaseData string
@@ -60,7 +65,11 @@ func HandleHelmData(request *types.APIRequest, resource *types.RawResource) {
 	}
 }
 
-func Pod(_ *types.APIRequest, resource *types.RawResource) {
+func Pod(request *types.APIRequest, resource *types.RawResource) {
+	ctx, span := otel.Tracer.Start(request.Context(), "Formatter Pod")
+	defer span.End()
+	request = request.WithContext(ctx)
+
 	data := resource.APIObject.Data()
 	fields := data.StringSlice("metadata", "fields")
 	if len(fields) > 2 {

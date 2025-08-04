@@ -3,6 +3,7 @@ package apigroups
 import (
 	"net/http"
 
+	"github.com/rancher/steve/pkg/otel"
 	"github.com/rancher/steve/pkg/schema"
 
 	"github.com/rancher/apiserver/pkg/store/empty"
@@ -31,6 +32,10 @@ func Template(discovery discovery.DiscoveryInterface) schema.Template {
 			apiSchema.ResourceMethods = []string{http.MethodGet}
 		},
 		Formatter: func(request *types.APIRequest, resource *types.RawResource) {
+			ctx, span := otel.Tracer.Start(request.Context(), "Formatter APIGroup")
+			defer span.End()
+			request = request.WithContext(ctx)
+
 			resource.ID = resource.APIObject.Data().String("name")
 		},
 		Store: NewStore(discovery),

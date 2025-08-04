@@ -10,6 +10,7 @@ import (
 	"github.com/rancher/apiserver/pkg/types"
 	"github.com/rancher/steve/pkg/accesscontrol"
 	"github.com/rancher/steve/pkg/attributes"
+	"github.com/rancher/steve/pkg/otel"
 	"github.com/rancher/steve/pkg/resources/virtual/common"
 	"github.com/sirupsen/logrus"
 
@@ -95,11 +96,15 @@ func buildBasePath(gvr schema2.GroupVersionResource, namespace string, includeNa
 	return buf.String()
 }
 
-func formatter(summarycache common.SummaryCache, asl accesscontrol.AccessSetLookup, options TemplateOptions) types.Formatter {
+func formatter(summaryCache common.SummaryCache, asl accesscontrol.AccessSetLookup, options TemplateOptions) types.Formatter {
 	return func(request *types.APIRequest, resource *types.RawResource) {
 		if resource.Schema == nil {
 			return
 		}
+
+		ctx, span := otel.Tracer.Start(request.Context(), "Formatter Default")
+		defer span.End()
+		request = request.WithContext(ctx)
 
 		gvr := attributes.GVR(resource.Schema)
 		if gvr.Version == "" {
@@ -114,13 +119,20 @@ func formatter(summarycache common.SummaryCache, asl accesscontrol.AccessSetLook
 		if !ok {
 			return
 		}
-		accessSet := accesscontrol.AccessSetFromAPIRequest(request)
-		if accessSet == nil {
-			accessSet = asl.AccessFor(userInfo)
+		var accessSet *accesscontrol.AccessSet
+		func() {
+			ctx, span := otel.Tracer.Start(request.Context(), "get access set")
+			defer span.End()
+			accessSetRequest := request.WithContext(ctx)
+
+			accessSet = accesscontrol.AccessSetFromAPIRequest(accessSetRequest)
 			if accessSet == nil {
-				return
+				accessSet = asl.AccessFor(userInfo)
+				if accessSet == nil {
+					return
+				}
 			}
-		}
+		}()
 		hasUpdate := accessSet.Grants("update", gvr.GroupResource(), resource.APIObject.Namespace(), resource.APIObject.Name())
 		hasDelete := accessSet.Grants("delete", gvr.GroupResource(), resource.APIObject.Namespace(), resource.APIObject.Name())
 		hasPatch := accessSet.Grants("patch", gvr.GroupResource(), resource.APIObject.Namespace(), resource.APIObject.Name())
@@ -156,7 +168,13 @@ func formatter(summarycache common.SummaryCache, asl accesscontrol.AccessSetLook
 		if unstr, ok := resource.APIObject.Object.(*unstructured.Unstructured); ok {
 			// with the sql cache, these were already added by the indexer. However, the sql cache
 			// is only used for lists, so we need to re-add here for get/watch
-			s, rel := summarycache.SummaryAndRelationship(unstr)
+			var s *summary.SummarizedObject
+			var rel []summarycache.Relationship
+			func() {
+				_, span := otel.Tracer.Start(request.Context(), "get summary and relationship")
+				defer span.End()
+				s, rel = summaryCache.SummaryAndRelationship(unstr)
+			}()
 			data.PutValue(unstr.Object, map[string]interface{}{
 				"name":          s.State,
 				"error":         s.Error,
@@ -209,6 +227,10 @@ func formatter(summarycache common.SummaryCache, asl accesscontrol.AccessSetLook
 }
 
 func includeFields(request *types.APIRequest, unstr *unstructured.Unstructured) {
+	ctx, span := otel.Tracer.Start(request.Context(), "include fields")
+	defer span.End()
+	request = request.WithContext(ctx)
+
 	if fields, ok := request.Query["include"]; ok {
 		newObj := map[string]interface{}{}
 		for _, f := range fields {
@@ -222,6 +244,10 @@ func includeFields(request *types.APIRequest, unstr *unstructured.Unstructured) 
 }
 
 func excludeFields(request *types.APIRequest, unstr *unstructured.Unstructured) {
+	ctx, span := otel.Tracer.Start(request.Context(), "exclude fields fields")
+	defer span.End()
+	request = request.WithContext(ctx)
+
 	if fields, ok := request.Query["exclude"]; ok {
 		for _, f := range fields {
 			fieldParts := strings.Split(f, ".")
@@ -235,6 +261,10 @@ func excludeFields(request *types.APIRequest, unstr *unstructured.Unstructured) 
 // those timestamps by subtracting them from time.Now(), then format the resulting duration into a human-friendly string.
 // This prevents cached durations (e.g. “2d” - 2 days) from becoming stale over time.
 func convertMetadataTimestampFields(request *types.APIRequest, gvk schema2.GroupVersionKind, unstr *unstructured.Unstructured, isCRD bool) {
+	ctx, span := otel.Tracer.Start(request.Context(), "convert timestamps")
+	defer span.End()
+	request = request.WithContext(ctx)
+
 	if request.Schema != nil {
 		cols := GetColumnDefinitions(request.Schema)
 		for _, col := range cols {
@@ -300,6 +330,10 @@ func isDuration(value string) (time.Duration, bool) {
 }
 
 func excludeValues(request *types.APIRequest, unstr *unstructured.Unstructured) {
+	ctx, span := otel.Tracer.Start(request.Context(), "exclude values")
+	defer span.End()
+	request = request.WithContext(ctx)
+
 	if values, ok := request.Query["excludeValues"]; ok {
 		for _, f := range values {
 			fieldParts := strings.Split(f, ".")

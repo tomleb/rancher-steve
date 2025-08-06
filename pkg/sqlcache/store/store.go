@@ -5,7 +5,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"reflect"
 	"strings"
@@ -57,12 +56,12 @@ type Store struct {
 	listQuery      string
 	listKeysQuery  string
 
-	upsertStmt    *sql.Stmt
-	deleteStmt    *sql.Stmt
-	deleteAllStmt *sql.Stmt
-	getStmt       *sql.Stmt
-	listStmt      *sql.Stmt
-	listKeysStmt  *sql.Stmt
+	upsertStmt    transaction.QueryStatement
+	deleteStmt    transaction.QueryStatement
+	deleteAllStmt transaction.QueryStatement
+	getStmt       transaction.QueryStatement
+	listStmt      transaction.QueryStatement
+	listKeysStmt  transaction.QueryStatement
 
 	afterAdd       []func(key string, obj any, tx transaction.Client) error
 	afterUpdate    []func(key string, obj any, tx transaction.Client) error

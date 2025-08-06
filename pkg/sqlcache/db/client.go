@@ -41,13 +41,13 @@ const (
 // Client defines a database client that provides encrypting, decrypting, and database resetting
 type Client interface {
 	WithTransaction(ctx context.Context, forWriting bool, f WithTransactionFunction) error
-	Prepare(stmt string) *sql.Stmt
-	QueryForRows(ctx context.Context, stmt transaction.Stmt, params ...any) (*sql.Rows, error)
+	Prepare(stmt string) transaction.QueryStatement
+	QueryForRows(ctx context.Context, stmt transaction.QueryStatement, params ...any) (*sql.Rows, error)
 	ReadObjects(ctx context.Context, rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error)
 	ReadStrings(rows Rows) ([]string, error)
 	ReadStrings2(rows Rows) ([][]string, error)
 	ReadInt(rows Rows) (int, error)
-	Upsert(tx transaction.Client, stmt *sql.Stmt, key string, obj any, shouldEncrypt bool) error
+	Upsert(tx transaction.Client, stmt transaction.QueryStatement, key string, obj any, shouldEncrypt bool) error
 	CloseStmt(closable Closable) error
 	NewConnection(isTemp bool) (string, error)
 	Encryptor() Encryptor
@@ -211,23 +211,26 @@ func NewClient(c Connection, encryptor Encryptor, decryptor Decryptor, useTempDi
 }
 
 // Prepare prepares the given string into a sql statement on the client's connection.
-func (c *client) Prepare(stmt string) *sql.Stmt {
+func (c *client) Prepare(query string) transaction.QueryStatement {
 	c.connLock.RLock()
 	defer c.connLock.RUnlock()
-	prepared, err := c.conn.Prepare(stmt)
+	prepared, err := c.conn.Prepare(query)
 	if err != nil {
-		panic(fmt.Errorf("Error preparing statement: %s\n%w", stmt, err))
+		panic(fmt.Errorf("Error preparing statement: %s\n%w", query, err))
 	}
-	return prepared
+	return transaction.QueryStatement{
+		Query: query,
+		Stmt:  prepared,
+	}
 }
 
 // QueryForRows queries the given stmt with the given params and returns the resulting rows. The query wil be retried
 // given a sqlite busy error.
-func (c *client) QueryForRows(ctx context.Context, stmt transaction.Stmt, params ...any) (*sql.Rows, error) {
+func (c *client) QueryForRows(ctx context.Context, stmt transaction.QueryStatement, params ...any) (*sql.Rows, error) {
 	c.connLock.RLock()
 	defer c.connLock.RUnlock()
 
-	return stmt.QueryContext(ctx, params...)
+	return stmt.Stmt.QueryContext(ctx, params...)
 }
 
 // CloseStmt will call close on the given Closable. It is intended to be used with a sql statement. This function is meant
@@ -373,7 +376,7 @@ func (c *client) decryptScan(rows Rows, shouldDecrypt bool) ([]byte, error) {
 
 // Upsert executes an upsert statement encrypting arguments if necessary
 // note the statement should have 4 parameters: key, objBytes, dataNonce, kid
-func (c *client) Upsert(tx transaction.Client, stmt *sql.Stmt, key string, obj any, shouldEncrypt bool) error {
+func (c *client) Upsert(tx transaction.Client, stmt transaction.QueryStatement, key string, obj any, shouldEncrypt bool) error {
 	objBytes := toBytes(obj)
 	var dataNonce []byte
 	var err error

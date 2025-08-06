@@ -2,7 +2,6 @@ package informer
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -55,11 +54,11 @@ type Indexer struct {
 	listKeysByIndexQuery string
 	listIndexValuesQuery string
 
-	deleteIndicesStmt   *sql.Stmt
-	addIndexStmt        *sql.Stmt
-	listByIndexStmt     *sql.Stmt
-	listKeysByIndexStmt *sql.Stmt
-	listIndexValuesStmt *sql.Stmt
+	deleteIndicesStmt   transaction.QueryStatement
+	addIndexStmt        transaction.QueryStatement
+	listByIndexStmt     transaction.QueryStatement
+	listKeysByIndexStmt transaction.QueryStatement
+	listIndexValuesStmt transaction.QueryStatement
 }
 
 var _ cache.Indexer = (*Indexer)(nil)

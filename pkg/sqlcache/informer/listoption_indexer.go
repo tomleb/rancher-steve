@@ -56,16 +56,16 @@ type ListOptionIndexer struct {
 	deleteLabelsByKeyQuery   string
 	deleteLabelsQuery        string
 
-	upsertEventsStmt        *sql.Stmt
-	findEventsRowByRVStmt   *sql.Stmt
-	listEventsAfterStmt     *sql.Stmt
-	deleteEventsByCountStmt *sql.Stmt
-	addFieldsStmt           *sql.Stmt
-	deleteFieldsByKeyStmt   *sql.Stmt
-	deleteFieldsStmt        *sql.Stmt
-	upsertLabelsStmt        *sql.Stmt
-	deleteLabelsByKeyStmt   *sql.Stmt
-	deleteLabelsStmt        *sql.Stmt
+	upsertEventsStmt        transaction.QueryStatement
+	findEventsRowByRVStmt   transaction.QueryStatement
+	listEventsAfterStmt     transaction.QueryStatement
+	deleteEventsByCountStmt transaction.QueryStatement
+	addFieldsStmt           transaction.QueryStatement
+	deleteFieldsByKeyStmt   transaction.QueryStatement
+	deleteFieldsStmt        transaction.QueryStatement
+	upsertLabelsStmt        transaction.QueryStatement
+	deleteLabelsByKeyStmt   transaction.QueryStatement
+	deleteLabelsStmt        transaction.QueryStatement
 }
 
 var (

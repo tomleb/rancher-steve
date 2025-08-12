@@ -32,6 +32,12 @@ var defaultRefreshTime = 5 * time.Second
 type Informer struct {
 	cache.SharedIndexInformer
 	ByOptionsLister
+
+	s *sqlStore.Store
+}
+
+func (i *Informer) RestartTrace() {
+	i.s.RestartTrace()
 }
 
 type WatchOptions struct {
@@ -135,6 +141,7 @@ func NewInformer(ctx context.Context, client dynamic.ResourceInterface, fields [
 	return &Informer{
 		SharedIndexInformer: sii,
 		ByOptionsLister:     loi,
+		s:                   s,
 	}, nil
 }
 

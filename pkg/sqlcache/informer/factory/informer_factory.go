@@ -56,6 +56,11 @@ type newInformer func(ctx context.Context, client dynamic.ResourceInterface, fie
 
 type Cache struct {
 	informer.ByOptionsLister
+	i *informer.Informer
+}
+
+func (c *Cache) RestartTrace() {
+	c.i.RestartTrace()
 }
 
 var defaultEncryptedResourceTypes = map[schema.GroupVersionKind]struct{}{
@@ -170,7 +175,7 @@ func (f *CacheFactory) CacheFor(ctx context.Context, fields [][]string, external
 	}
 
 	// At this point the informer is ready, return it
-	return Cache{ByOptionsLister: gi.informer}, nil
+	return Cache{ByOptionsLister: gi.informer, i: gi.informer}, nil
 }
 
 // Reset cancels ctx which stops any running informers, assigns a new ctx, resets the GVK-informer cache, and resets

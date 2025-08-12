@@ -8,12 +8,17 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 
 	"github.com/rancher/lasso/pkg/log"
+	"github.com/rancher/steve/pkg/otel"
 	"github.com/rancher/steve/pkg/sqlcache/db"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
 
@@ -36,9 +41,16 @@ const (
 	)`
 )
 
+type traceInfo struct {
+	ctx         context.Context
+	endSpanFunc func()
+}
+
 // Store is a SQLite-backed cache.Store
 type Store struct {
 	db.Client
+
+	trace atomic.Pointer[traceInfo]
 
 	ctx                context.Context
 	gvk                schema.GroupVersionKind
@@ -72,6 +84,29 @@ type Store struct {
 // Test that Store implements cache.Indexer
 var _ cache.Store = (*Store)(nil)
 
+func (s *Store) RestartTrace() {
+	fmt.Println("HITHERE Restarting trace", s.name)
+	traceCtx, span := otel.Tracer.Start(s.ctx, "Store",
+		trace.WithAttributes(attribute.String("name", s.name)),
+	)
+	newInfo := &traceInfo{
+		ctx: traceCtx,
+		endSpanFunc: func() {
+			fmt.Println("span end", s.name)
+			span.End()
+		},
+	}
+	oldInfo := s.trace.Swap(newInfo)
+	if oldInfo != nil {
+		oldInfo.endSpanFunc()
+	}
+}
+
+func (s *Store) getContext() context.Context {
+	info := s.trace.Load()
+	return info.ctx
+}
+
 // NewStore creates a SQLite-backed cache.Store for objects of the given example type
 func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Client, shouldEncrypt bool, gvk schema.GroupVersionKind, name string, externalUpdateInfo *sqltypes.ExternalGVKUpdates, selfUpdateInfo *sqltypes.ExternalGVKUpdates) (*Store, error) {
 	s := &Store{
@@ -89,6 +124,7 @@ func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Clie
 		afterDelete:        []func(ctx context.Context, key string, obj any, tx transaction.Client) error{},
 		afterDeleteAll:     []func(ctx context.Context, tx transaction.Client) error{},
 	}
+	defer s.RestartTrace()
 
 	dbName := db.Sanitize(s.name)
 
@@ -328,12 +364,25 @@ func (s *Store) GetByKey(key string) (item any, exists bool, err error) {
 
 // Add saves an obj, or updates it if it exists in this Store
 func (s *Store) Add(obj any) error {
+	metaObj, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+
 	key, err := s.keyFunc(obj)
 	if err != nil {
 		return err
 	}
 
-	err = s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
+	ctx, span := otel.Tracer.Start(s.getContext(), "Store.Add",
+		trace.WithAttributes(
+			attribute.String("rv", metaObj.GetResourceVersion()),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
+	err = s.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt)
 		if err != nil {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
@@ -356,12 +405,25 @@ func (s *Store) Add(obj any) error {
 
 // Update saves an obj, or updates it if it exists in this Store
 func (s *Store) Update(obj any) error {
+	metaObj, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+
 	key, err := s.keyFunc(obj)
 	if err != nil {
 		return err
 	}
 
-	err = s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
+	ctx, span := otel.Tracer.Start(s.getContext(), "Store.Update",
+		trace.WithAttributes(
+			attribute.String("rv", metaObj.GetResourceVersion()),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
+	err = s.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt)
 		if err != nil {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
@@ -384,10 +446,24 @@ func (s *Store) Update(obj any) error {
 
 // Delete deletes the given object, if it exists in this Store
 func (s *Store) Delete(obj any) error {
+	metaObj, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+
 	key, err := s.keyFunc(obj)
 	if err != nil {
 		return err
 	}
+
+	ctx, span := otel.Tracer.Start(s.getContext(), "Store.Delete",
+		trace.WithAttributes(
+			attribute.String("rv", metaObj.GetResourceVersion()),
+			attribute.String("key", key),
+		),
+	)
+	defer span.End()
+
 	err = s.deleteByKey(ctx, key, obj)
 	if err != nil {
 		log.Errorf("Error in Store.Delete for type %v: %v", s.name, err)

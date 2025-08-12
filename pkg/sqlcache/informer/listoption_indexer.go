@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rancher/steve/pkg/otel"
 	steveotel "github.com/rancher/steve/pkg/otel"
 	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
@@ -446,10 +447,16 @@ func (l *ListOptionIndexer) removeWatcher(key *watchKey) {
 /* Core methods */
 
 func (l *ListOptionIndexer) notifyEventAdded(ctx context.Context, key string, obj any, tx transaction.Client) error {
+	ctx, span := otel.Tracer.Start(ctx, "notifyEventAdded")
+	defer span.End()
+
 	return l.notifyEvent(ctx, watch.Added, nil, obj, tx)
 }
 
 func (l *ListOptionIndexer) notifyEventModified(ctx context.Context, key string, obj any, tx transaction.Client) error {
+	ctx, span := otel.Tracer.Start(ctx, "notifyEventModified")
+	defer span.End()
+
 	oldObj, exists, err := l.GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("error getting old object: %w", err)
@@ -463,6 +470,9 @@ func (l *ListOptionIndexer) notifyEventModified(ctx context.Context, key string,
 }
 
 func (l *ListOptionIndexer) notifyEventDeleted(ctx context.Context, key string, obj any, tx transaction.Client) error {
+	ctx, span := otel.Tracer.Start(ctx, "notifyEventDeleted")
+	defer span.End()
+
 	oldObj, exists, err := l.GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("error getting old object: %w", err)
@@ -487,18 +497,23 @@ func (l *ListOptionIndexer) notifyEvent(ctx context.Context, eventType watch.Eve
 		return err
 	}
 
-	l.watchersLock.RLock()
-	for _, watcher := range l.watchers {
-		if !matchWatch(watcher.filter.ID, watcher.filter.Namespace, watcher.filter.Selector, oldObj, obj) {
-			continue
-		}
+	func() {
+		_, span := otel.Tracer.Start(ctx, "send to clients")
+		defer span.End()
 
-		watcher.ch <- watch.Event{
-			Type:   eventType,
-			Object: obj.(runtime.Object).DeepCopyObject(),
+		l.watchersLock.RLock()
+		for _, watcher := range l.watchers {
+			if !matchWatch(watcher.filter.ID, watcher.filter.Namespace, watcher.filter.Selector, oldObj, obj) {
+				continue
+			}
+
+			watcher.ch <- watch.Event{
+				Type:   eventType,
+				Object: obj.(runtime.Object).DeepCopyObject(),
+			}
 		}
-	}
-	l.watchersLock.RUnlock()
+		l.watchersLock.RUnlock()
+	}()
 
 	l.latestRVLock.Lock()
 	defer l.latestRVLock.Unlock()

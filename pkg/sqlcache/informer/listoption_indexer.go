@@ -445,11 +445,11 @@ func (l *ListOptionIndexer) removeWatcher(key *watchKey) {
 
 /* Core methods */
 
-func (l *ListOptionIndexer) notifyEventAdded(key string, obj any, tx transaction.Client) error {
-	return l.notifyEvent(watch.Added, nil, obj, tx)
+func (l *ListOptionIndexer) notifyEventAdded(ctx context.Context, key string, obj any, tx transaction.Client) error {
+	return l.notifyEvent(ctx, watch.Added, nil, obj, tx)
 }
 
-func (l *ListOptionIndexer) notifyEventModified(key string, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) notifyEventModified(ctx context.Context, key string, obj any, tx transaction.Client) error {
 	oldObj, exists, err := l.GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("error getting old object: %w", err)
@@ -459,10 +459,10 @@ func (l *ListOptionIndexer) notifyEventModified(key string, obj any, tx transact
 		return fmt.Errorf("old object %q should be in store but was not", key)
 	}
 
-	return l.notifyEvent(watch.Modified, oldObj, obj, tx)
+	return l.notifyEvent(ctx, watch.Modified, oldObj, obj, tx)
 }
 
-func (l *ListOptionIndexer) notifyEventDeleted(key string, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) notifyEventDeleted(ctx context.Context, key string, obj any, tx transaction.Client) error {
 	oldObj, exists, err := l.GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("error getting old object: %w", err)
@@ -471,10 +471,10 @@ func (l *ListOptionIndexer) notifyEventDeleted(key string, obj any, tx transacti
 	if !exists {
 		return fmt.Errorf("old object %q should be in store but was not", key)
 	}
-	return l.notifyEvent(watch.Deleted, oldObj, obj, tx)
+	return l.notifyEvent(ctx, watch.Deleted, oldObj, obj, tx)
 }
 
-func (l *ListOptionIndexer) notifyEvent(eventType watch.EventType, oldObj any, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) notifyEvent(ctx context.Context, eventType watch.EventType, oldObj any, obj any, tx transaction.Client) error {
 	acc, err := meta.Accessor(obj)
 	if err != nil {
 		return err
@@ -527,7 +527,7 @@ func (l *ListOptionIndexer) upsertEvent(tx transaction.Client, eventType watch.E
 }
 
 // addIndexFields saves sortable/filterable fields into tables
-func (l *ListOptionIndexer) addIndexFields(key string, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) addIndexFields(ctx context.Context, key string, obj any, tx transaction.Client) error {
 	args := []any{key}
 	for _, field := range l.indexedFields {
 		value, err := getField(obj, field)
@@ -556,7 +556,7 @@ func (l *ListOptionIndexer) addIndexFields(key string, obj any, tx transaction.C
 }
 
 // labels are stored in tables that shadow the underlying object table for each GVK
-func (l *ListOptionIndexer) addLabels(key string, obj any, tx transaction.Client) error {
+func (l *ListOptionIndexer) addLabels(ctx context.Context, key string, obj any, tx transaction.Client) error {
 	k8sObj, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return fmt.Errorf("addLabels: unexpected object type, expected unstructured.Unstructured: %v", obj)
@@ -571,7 +571,7 @@ func (l *ListOptionIndexer) addLabels(key string, obj any, tx transaction.Client
 	return nil
 }
 
-func (l *ListOptionIndexer) deleteFieldsByKey(key string, _ any, tx transaction.Client) error {
+func (l *ListOptionIndexer) deleteFieldsByKey(ctx context.Context, key string, _ any, tx transaction.Client) error {
 	args := []any{key}
 
 	_, err := tx.Stmt(l.deleteFieldsByKeyStmt).Exec(args...)
@@ -581,7 +581,7 @@ func (l *ListOptionIndexer) deleteFieldsByKey(key string, _ any, tx transaction.
 	return nil
 }
 
-func (l *ListOptionIndexer) deleteFields(tx transaction.Client) error {
+func (l *ListOptionIndexer) deleteFields(ctx context.Context, tx transaction.Client) error {
 	_, err := tx.Stmt(l.deleteFieldsStmt).Exec()
 	if err != nil {
 		return &db.QueryError{QueryString: l.deleteFieldsQuery, Err: err}
@@ -589,7 +589,7 @@ func (l *ListOptionIndexer) deleteFields(tx transaction.Client) error {
 	return nil
 }
 
-func (l *ListOptionIndexer) deleteLabelsByKey(key string, _ any, tx transaction.Client) error {
+func (l *ListOptionIndexer) deleteLabelsByKey(ctx context.Context, key string, _ any, tx transaction.Client) error {
 	_, err := tx.Stmt(l.deleteLabelsByKeyStmt).Exec(key)
 	if err != nil {
 		return &db.QueryError{QueryString: l.deleteLabelsByKeyQuery, Err: err}
@@ -597,7 +597,7 @@ func (l *ListOptionIndexer) deleteLabelsByKey(key string, _ any, tx transaction.
 	return nil
 }
 
-func (l *ListOptionIndexer) deleteLabels(tx transaction.Client) error {
+func (l *ListOptionIndexer) deleteLabels(ctx context.Context, tx transaction.Client) error {
 	_, err := tx.Stmt(l.deleteLabelsStmt).Exec()
 	if err != nil {
 		return &db.QueryError{QueryString: l.deleteLabelsQuery, Err: err}

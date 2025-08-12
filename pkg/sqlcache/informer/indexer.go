@@ -69,10 +69,10 @@ type Store interface {
 
 	GetByKey(key string) (item any, exists bool, err error)
 	GetName() string
-	RegisterAfterAdd(f func(key string, obj any, tx transaction.Client) error)
-	RegisterAfterUpdate(f func(key string, obj any, tx transaction.Client) error)
-	RegisterAfterDelete(f func(key string, obj any, tx transaction.Client) error)
-	RegisterAfterDeleteAll(f func(tx transaction.Client) error)
+	RegisterAfterAdd(f func(ctx context.Context, key string, obj any, tx transaction.Client) error)
+	RegisterAfterUpdate(f func(ctx context.Context, key string, obj any, tx transaction.Client) error)
+	RegisterAfterDelete(f func(ctx context.Context, key string, obj any, tx transaction.Client) error)
+	RegisterAfterDeleteAll(f func(ctx context.Context, tx transaction.Client) error)
 	GetShouldEncrypt() bool
 	GetType() reflect.Type
 }
@@ -124,7 +124,7 @@ func NewIndexer(ctx context.Context, indexers cache.Indexers, s Store) (*Indexer
 /* Core methods */
 
 // AfterUpsert updates indices of an object
-func (i *Indexer) AfterUpsert(key string, obj any, tx transaction.Client) error {
+func (i *Indexer) AfterUpsert(ctx context.Context, key string, obj any, tx transaction.Client) error {
 	// delete all
 	_, err := tx.Stmt(i.deleteIndicesStmt).Exec(key)
 	if err != nil {

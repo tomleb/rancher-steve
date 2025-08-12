@@ -63,10 +63,10 @@ type Store struct {
 	listStmt      transaction.QueryStatement
 	listKeysStmt  transaction.QueryStatement
 
-	afterAdd       []func(key string, obj any, tx transaction.Client) error
-	afterUpdate    []func(key string, obj any, tx transaction.Client) error
-	afterDelete    []func(key string, obj any, tx transaction.Client) error
-	afterDeleteAll []func(tx transaction.Client) error
+	afterAdd       []func(ctx context.Context, key string, obj any, tx transaction.Client) error
+	afterUpdate    []func(ctx context.Context, key string, obj any, tx transaction.Client) error
+	afterDelete    []func(ctx context.Context, key string, obj any, tx transaction.Client) error
+	afterDeleteAll []func(ctx context.Context, tx transaction.Client) error
 }
 
 // Test that Store implements cache.Indexer
@@ -84,10 +84,10 @@ func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Clie
 		Client:             c,
 		keyFunc:            keyFunc,
 		shouldEncrypt:      shouldEncrypt,
-		afterAdd:           []func(key string, obj any, tx transaction.Client) error{},
-		afterUpdate:        []func(key string, obj any, tx transaction.Client) error{},
-		afterDelete:        []func(key string, obj any, tx transaction.Client) error{},
-		afterDeleteAll:     []func(tx transaction.Client) error{},
+		afterAdd:           []func(ctx context.Context, key string, obj any, tx transaction.Client) error{},
+		afterUpdate:        []func(ctx context.Context, key string, obj any, tx transaction.Client) error{},
+		afterDelete:        []func(ctx context.Context, key string, obj any, tx transaction.Client) error{},
+		afterDeleteAll:     []func(ctx context.Context, tx transaction.Client) error{},
 	}
 
 	dbName := db.Sanitize(s.name)
@@ -127,11 +127,11 @@ func isDBError(e error) bool {
 	return strings.Contains(e.Error(), "SQL logic error: no such table:")
 }
 
-func (s *Store) checkUpdateExternalInfo(key string) {
+func (s *Store) checkUpdateExternalInfo(ctx context.Context, key string) {
 	for _, updateBlock := range []*sqltypes.ExternalGVKUpdates{s.externalUpdateInfo, s.selfUpdateInfo} {
 		if updateBlock != nil {
-			s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
-				err := s.updateExternalInfo(tx, key, updateBlock)
+			s.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
+				err := s.updateExternalInfo(ctx, tx, key, updateBlock)
 				if err != nil && !isDBError(err) {
 					// Just report and ignore errors
 					logrus.Errorf("Error updating external info %v: %s", s.externalUpdateInfo, err)
@@ -154,7 +154,7 @@ func (s *Store) checkUpdateExternalInfo(key string) {
 // Some code later on in the function verifies that we aren't overwriting a non-empty value
 // with the empty string. I assume this is never desired.
 
-func (s *Store) updateExternalInfo(tx transaction.Client, key string, externalUpdateInfo *sqltypes.ExternalGVKUpdates) error {
+func (s *Store) updateExternalInfo(ctx context.Context, tx transaction.Client, key string, externalUpdateInfo *sqltypes.ExternalGVKUpdates) error {
 	for _, labelDep := range externalUpdateInfo.ExternalLabelDependencies {
 		rawGetStmt := fmt.Sprintf(`SELECT DISTINCT f.key, ex2."%s" FROM "%s_fields" f
   LEFT OUTER JOIN "%s_labels" lt1 ON f.key = lt1.key
@@ -169,7 +169,7 @@ func (s *Store) updateExternalInfo(tx transaction.Client, key string, externalUp
 			labelDep.TargetFinalFieldName,
 		)
 		getStmt := s.Prepare(rawGetStmt)
-		rows, err := s.QueryForRows(s.ctx, getStmt, labelDep.SourceLabelName)
+		rows, err := s.QueryForRows(ctx, getStmt, labelDep.SourceLabelName)
 		if err != nil {
 			if !isDBError(err) {
 				logrus.Infof("Error getting external info for table %s, key %s: %v", labelDep.TargetGVK, key, &db.QueryError{QueryString: rawGetStmt, Err: err})
@@ -187,7 +187,7 @@ func (s *Store) updateExternalInfo(tx transaction.Client, key string, externalUp
 		for _, innerResult := range result {
 			sourceKey := innerResult[0]
 			finalTargetValue := innerResult[1]
-			ignoreUpdate, err := s.overrideCheck(labelDep.TargetFinalFieldName, labelDep.SourceGVK, sourceKey, finalTargetValue)
+			ignoreUpdate, err := s.overrideCheck(ctx, labelDep.TargetFinalFieldName, labelDep.SourceGVK, sourceKey, finalTargetValue)
 			if ignoreUpdate || err != nil {
 				continue
 			}
@@ -215,7 +215,7 @@ func (s *Store) updateExternalInfo(tx transaction.Client, key string, externalUp
 		// TODO: Try to fold the two blocks together
 
 		getStmt := s.Prepare(rawGetStmt)
-		rows, err := s.QueryForRows(s.ctx, getStmt)
+		rows, err := s.QueryForRows(ctx, getStmt)
 		if err != nil {
 			if !isDBError(err) {
 				logrus.Infof("Error getting external info for table %s, key %s: %v", nonLabelDep.TargetGVK, key, &db.QueryError{QueryString: rawGetStmt, Err: err})
@@ -233,7 +233,7 @@ func (s *Store) updateExternalInfo(tx transaction.Client, key string, externalUp
 		for _, innerResult := range result {
 			sourceKey := innerResult[0]
 			finalTargetValue := innerResult[1]
-			ignoreUpdate, err := s.overrideCheck(nonLabelDep.TargetFinalFieldName, nonLabelDep.SourceGVK, sourceKey, finalTargetValue)
+			ignoreUpdate, err := s.overrideCheck(ctx, nonLabelDep.TargetFinalFieldName, nonLabelDep.SourceGVK, sourceKey, finalTargetValue)
 			if ignoreUpdate || err != nil {
 				continue
 			}
@@ -257,11 +257,11 @@ func (s *Store) updateExternalInfo(tx transaction.Client, key string, externalUp
 }
 
 // If the new value will change a non-empty current value, return [true, error:nil]
-func (s *Store) overrideCheck(finalFieldName, sourceGVK, sourceKey, finalTargetValue string) (bool, error) {
+func (s *Store) overrideCheck(ctx context.Context, finalFieldName, sourceGVK, sourceKey, finalTargetValue string) (bool, error) {
 	rawGetValueStmt := fmt.Sprintf(`SELECT f."%s" FROM  "%s_fields" f WHERE f.key = ?`,
 		finalFieldName, sourceGVK)
 	getValueStmt := s.Prepare(rawGetValueStmt)
-	rows, err := s.QueryForRows(s.ctx, getValueStmt, sourceKey)
+	rows, err := s.QueryForRows(ctx, getValueStmt, sourceKey)
 	if err != nil {
 		logrus.Debugf("Checking the field, got error %s", err)
 		return false, err
@@ -288,14 +288,14 @@ func (s *Store) overrideCheck(finalFieldName, sourceGVK, sourceKey, finalTargetV
 /* Core methods */
 
 // deleteByKey deletes the object associated with key, if it exists in this Store
-func (s *Store) deleteByKey(key string, obj any) error {
-	return s.WithTransaction(s.ctx, true, func(ctx context.Context, tx transaction.Client) error {
+func (s *Store) deleteByKey(ctx context.Context, key string, obj any) error {
+	return s.WithTransaction(ctx, true, func(ctx context.Context, tx transaction.Client) error {
 		_, err := tx.Stmt(s.deleteStmt).Exec(key)
 		if err != nil {
 			return &db.QueryError{QueryString: s.deleteQuery, Err: err}
 		}
 
-		err = s.runAfterDelete(key, obj, tx)
+		err = s.runAfterDelete(ctx, key, obj, tx)
 		if err != nil {
 			return err
 		}
@@ -339,7 +339,7 @@ func (s *Store) Add(obj any) error {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
 		}
 
-		err = s.runAfterAdd(key, obj, tx)
+		err = s.runAfterAdd(ctx, key, obj, tx)
 		if err != nil {
 			return err
 		}
@@ -350,7 +350,7 @@ func (s *Store) Add(obj any) error {
 		log.Errorf("Error in Store.Add for type %v: %v", s.name, err)
 		return err
 	}
-	s.checkUpdateExternalInfo(key)
+	s.checkUpdateExternalInfo(ctx, key)
 	return nil
 }
 
@@ -367,7 +367,7 @@ func (s *Store) Update(obj any) error {
 			return &db.QueryError{QueryString: s.upsertQuery, Err: err}
 		}
 
-		err = s.runAfterUpdate(key, obj, tx)
+		err = s.runAfterUpdate(ctx, key, obj, tx)
 		if err != nil {
 			return err
 		}
@@ -378,7 +378,7 @@ func (s *Store) Update(obj any) error {
 		log.Errorf("Error in Store.Update for type %v: %v", s.name, err)
 		return err
 	}
-	s.checkUpdateExternalInfo(key)
+	s.checkUpdateExternalInfo(ctx, key)
 	return nil
 }
 
@@ -388,7 +388,7 @@ func (s *Store) Delete(obj any) error {
 	if err != nil {
 		return err
 	}
-	err = s.deleteByKey(key, obj)
+	err = s.deleteByKey(ctx, key, obj)
 	if err != nil {
 		log.Errorf("Error in Store.Delete for type %v: %v", s.name, err)
 		return err
@@ -464,7 +464,7 @@ func (s *Store) replaceByKey(objects map[string]any) error {
 			return &db.QueryError{QueryString: s.deleteAllQuery, Err: err}
 		}
 
-		err = s.runAfterDeleteAll(txC)
+		err = s.runAfterDeleteAll(ctx, txC)
 		if err != nil {
 			return err
 		}
@@ -474,7 +474,7 @@ func (s *Store) replaceByKey(objects map[string]any) error {
 			if err != nil {
 				return err
 			}
-			err = s.runAfterAdd(key, obj, txC)
+			err = s.runAfterAdd(ctx, key, obj, txC)
 			if err != nil {
 				return err
 			}
@@ -504,29 +504,29 @@ func (s *Store) GetType() reflect.Type {
 }
 
 // RegisterAfterAdd registers a func to be called after each add event
-func (s *Store) RegisterAfterAdd(f func(key string, obj any, txC transaction.Client) error) {
+func (s *Store) RegisterAfterAdd(f func(ctx context.Context, key string, obj any, txC transaction.Client) error) {
 	s.afterAdd = append(s.afterAdd, f)
 }
 
 // RegisterAfterUpdate registers a func to be called after each update event
-func (s *Store) RegisterAfterUpdate(f func(key string, obj any, txC transaction.Client) error) {
+func (s *Store) RegisterAfterUpdate(f func(ctx context.Context, key string, obj any, txC transaction.Client) error) {
 	s.afterUpdate = append(s.afterUpdate, f)
 }
 
 // RegisterAfterDelete registers a func to be called after each deletion
-func (s *Store) RegisterAfterDelete(f func(key string, obj any, txC transaction.Client) error) {
+func (s *Store) RegisterAfterDelete(f func(ctx context.Context, key string, obj any, txC transaction.Client) error) {
 	s.afterDelete = append(s.afterDelete, f)
 }
 
 // RegisterAfterDelete registers a func to be called after each deletion
-func (s *Store) RegisterAfterDeleteAll(f func(txC transaction.Client) error) {
+func (s *Store) RegisterAfterDeleteAll(f func(ctx context.Context, txC transaction.Client) error) {
 	s.afterDeleteAll = append(s.afterDeleteAll, f)
 }
 
 // runAfterAdd executes functions registered to run after add event
-func (s *Store) runAfterAdd(key string, obj any, txC transaction.Client) error {
+func (s *Store) runAfterAdd(ctx context.Context, key string, obj any, txC transaction.Client) error {
 	for _, f := range s.afterAdd {
-		err := f(key, obj, txC)
+		err := f(ctx, key, obj, txC)
 		if err != nil {
 			return err
 		}
@@ -535,9 +535,9 @@ func (s *Store) runAfterAdd(key string, obj any, txC transaction.Client) error {
 }
 
 // runAfterUpdate executes functions registered to run after update event
-func (s *Store) runAfterUpdate(key string, obj any, txC transaction.Client) error {
+func (s *Store) runAfterUpdate(ctx context.Context, key string, obj any, txC transaction.Client) error {
 	for _, f := range s.afterUpdate {
-		err := f(key, obj, txC)
+		err := f(ctx, key, obj, txC)
 		if err != nil {
 			return err
 		}
@@ -546,9 +546,9 @@ func (s *Store) runAfterUpdate(key string, obj any, txC transaction.Client) erro
 }
 
 // runAfterDelete executes functions registered to run after delete event
-func (s *Store) runAfterDelete(key string, obj any, txC transaction.Client) error {
+func (s *Store) runAfterDelete(ctx context.Context, key string, obj any, txC transaction.Client) error {
 	for _, f := range s.afterDelete {
-		err := f(key, obj, txC)
+		err := f(ctx, key, obj, txC)
 		if err != nil {
 			return err
 		}
@@ -558,9 +558,9 @@ func (s *Store) runAfterDelete(key string, obj any, txC transaction.Client) erro
 
 // runAfterDeleteAll executes functions registered to run after delete events when
 // the database is being replaced.
-func (s *Store) runAfterDeleteAll(txC transaction.Client) error {
+func (s *Store) runAfterDeleteAll(ctx context.Context, txC transaction.Client) error {
 	for _, f := range s.afterDeleteAll {
-		err := f(txC)
+		err := f(ctx, txC)
 		if err != nil {
 			return err
 		}

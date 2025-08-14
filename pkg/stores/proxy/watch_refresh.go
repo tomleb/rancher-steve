@@ -53,3 +53,15 @@ func (w *WatchRefresh) Watch(apiOp *types.APIRequest, schema *types.APISchema, w
 
 	return w.Store.Watch(apiOp, schema, wr)
 }
+
+func (w *WatchRefresh) StartTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := w.Store.(types.TracerStore); ok {
+		tracerStore.StartTrace(apiOp, schema)
+	}
+}
+
+func (w *WatchRefresh) StopTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := w.Store.(types.TracerStore); ok {
+		tracerStore.StopTrace(apiOp, schema)
+	}
+}

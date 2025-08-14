@@ -59,8 +59,12 @@ type Cache struct {
 	i *informer.Informer
 }
 
-func (c *Cache) RestartTrace() {
-	c.i.RestartTrace()
+func (c *Cache) StartTrace() {
+	c.i.StartTrace()
+}
+
+func (c *Cache) StopTrace() {
+	c.i.StopTrace()
 }
 
 var defaultEncryptedResourceTypes = map[schema.GroupVersionKind]struct{}{

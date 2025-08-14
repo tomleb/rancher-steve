@@ -33,6 +33,11 @@ type UnstructuredStore interface {
 	WatchByPartitions(apiOp *types.APIRequest, schema *types.APISchema, wr types.WatchRequest, partitions []partition.Partition) (chan watch.Event, error)
 }
 
+type TracerUnstructuredStore interface {
+	StartTrace(apiOp *types.APIRequest, schema *types.APISchema)
+	StopTrace(apiOp *types.APIRequest, schema *types.APISchema)
+}
+
 // rbacPartitioner is an implementation of the sqlpartition.Partitioner interface.
 type rbacPartitioner struct {
 	proxyStore UnstructuredStore

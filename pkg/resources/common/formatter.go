@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/rancher/steve/pkg/summarycache"
 	"github.com/rancher/wrangler/v3/pkg/data"
 	corecontrollers "github.com/rancher/wrangler/v3/pkg/generated/controllers/core/v1"
+	"github.com/rancher/wrangler/v3/pkg/schemas"
 	"github.com/rancher/wrangler/v3/pkg/summary"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,8 +39,9 @@ func DefaultTemplate(clientGetter proxy.ClientGetter,
 	asl accesscontrol.AccessSetLookup,
 	namespaceCache corecontrollers.NamespaceCache,
 	options TemplateOptions) schema.Template {
+	store := metricsStore.NewMetricsStore(proxy.NewProxyStore(clientGetter, summaryCache, asl, namespaceCache))
 	return schema.Template{
-		Store:     metricsStore.NewMetricsStore(proxy.NewProxyStore(clientGetter, summaryCache, asl, namespaceCache)),
+		Store:     store,
 		Formatter: formatter(summaryCache, asl, options),
 	}
 }
@@ -51,6 +54,31 @@ func DefaultTemplateForStore(store types.Store,
 	return schema.Template{
 		Store:     store,
 		Formatter: formatter(summaryCache, asl, options),
+		Customize: func(apiSchema *types.APISchema) {
+			apiSchema.CollectionActions = map[string]schemas.Action{
+				"start-trace": {
+					Input:  "empty",
+					Output: "empty",
+				},
+				"stop-trace": {},
+			}
+			apiSchema.ActionHandlers = map[string]http.Handler{
+				"start-trace": http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					apiRequest := types.GetAPIContext(req.Context())
+					if tracerStore, ok := store.(types.TracerStore); ok {
+						fmt.Println("Start trace maybe")
+						tracerStore.StartTrace(apiRequest, apiSchema)
+					}
+				}),
+				"stop-trace": http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					apiRequest := types.GetAPIContext(req.Context())
+					if tracerStore, ok := store.(types.TracerStore); ok {
+						fmt.Println("Stop trace maybe")
+						tracerStore.StopTrace(apiRequest, apiSchema)
+					}
+				}),
+			}
+		},
 	}
 }
 
@@ -102,7 +130,7 @@ func formatter(summaryCache common.SummaryCache, asl accesscontrol.AccessSetLook
 			return
 		}
 
-		ctx, span := otel.Tracer.Start(request.Context(), "Formatter Default")
+		ctx, span := otel.Start(request.Context(), "Formatter Default")
 		defer span.End()
 		request = request.WithContext(ctx)
 
@@ -121,7 +149,7 @@ func formatter(summaryCache common.SummaryCache, asl accesscontrol.AccessSetLook
 		}
 		var accessSet *accesscontrol.AccessSet
 		func() {
-			ctx, span := otel.Tracer.Start(request.Context(), "get access set")
+			ctx, span := otel.Start(request.Context(), "get access set")
 			defer span.End()
 			accessSetRequest := request.WithContext(ctx)
 
@@ -171,7 +199,7 @@ func formatter(summaryCache common.SummaryCache, asl accesscontrol.AccessSetLook
 			var s *summary.SummarizedObject
 			var rel []summarycache.Relationship
 			func() {
-				_, span := otel.Tracer.Start(request.Context(), "get summary and relationship")
+				_, span := otel.Start(request.Context(), "get summary and relationship")
 				defer span.End()
 				s, rel = summaryCache.SummaryAndRelationship(unstr)
 			}()
@@ -227,7 +255,7 @@ func formatter(summaryCache common.SummaryCache, asl accesscontrol.AccessSetLook
 }
 
 func includeFields(request *types.APIRequest, unstr *unstructured.Unstructured) {
-	ctx, span := otel.Tracer.Start(request.Context(), "include fields")
+	ctx, span := otel.Start(request.Context(), "include fields")
 	defer span.End()
 	request = request.WithContext(ctx)
 
@@ -244,7 +272,7 @@ func includeFields(request *types.APIRequest, unstr *unstructured.Unstructured) 
 }
 
 func excludeFields(request *types.APIRequest, unstr *unstructured.Unstructured) {
-	ctx, span := otel.Tracer.Start(request.Context(), "exclude fields fields")
+	ctx, span := otel.Start(request.Context(), "exclude fields fields")
 	defer span.End()
 	request = request.WithContext(ctx)
 
@@ -261,7 +289,7 @@ func excludeFields(request *types.APIRequest, unstr *unstructured.Unstructured) 
 // those timestamps by subtracting them from time.Now(), then format the resulting duration into a human-friendly string.
 // This prevents cached durations (e.g. “2d” - 2 days) from becoming stale over time.
 func convertMetadataTimestampFields(request *types.APIRequest, gvk schema2.GroupVersionKind, unstr *unstructured.Unstructured, isCRD bool) {
-	ctx, span := otel.Tracer.Start(request.Context(), "convert timestamps")
+	ctx, span := otel.Start(request.Context(), "convert timestamps")
 	defer span.End()
 	request = request.WithContext(ctx)
 
@@ -330,7 +358,7 @@ func isDuration(value string) (time.Duration, bool) {
 }
 
 func excludeValues(request *types.APIRequest, unstr *unstructured.Unstructured) {
-	ctx, span := otel.Tracer.Start(request.Context(), "exclude values")
+	ctx, span := otel.Start(request.Context(), "exclude values")
 	defer span.End()
 	request = request.WithContext(ctx)
 

@@ -48,6 +48,18 @@ func (u *unformatterStore) Watch(apiOp *types.APIRequest, schema *types.APISchem
 	return u.Store.Watch(apiOp, schema, wr)
 }
 
+func (u *unformatterStore) StartTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := u.Store.(types.TracerStore); ok {
+		tracerStore.StartTrace(apiOp, schema)
+	}
+}
+
+func (u *unformatterStore) StopTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := u.Store.(types.TracerStore); ok {
+		tracerStore.StopTrace(apiOp, schema)
+	}
+}
+
 func unformat(obj types.APIObject) types.APIObject {
 	unst, ok := obj.Object.(map[string]interface{})
 	if !ok {

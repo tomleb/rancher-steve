@@ -73,11 +73,11 @@ func (c *client) WithTransaction(ctx context.Context, forWriting bool, f WithTra
 }
 
 func (c *client) withTransaction(ctx context.Context, forWriting bool, f WithTransactionFunction) error {
-	_, span := otel.Tracer.Start(ctx, "read lock")
+	_, span := otel.Start(ctx, "read lock")
 	c.connLock.RLock()
 	span.End()
 
-	ctx2, span := otel.Tracer.Start(ctx, "begin tx")
+	ctx2, span := otel.Start(ctx, "begin tx")
 	// note: this assumes _txlock=immediate in the connection string, see NewConnection
 	tx, err := c.conn.BeginTx(ctx2, &sql.TxOptions{
 		ReadOnly: !forWriting,
@@ -90,7 +90,7 @@ func (c *client) withTransaction(ctx context.Context, forWriting bool, f WithTra
 	}
 
 	theQuery := func() error {
-		ctx, span := otel.Tracer.Start(ctx, "running")
+		ctx, span := otel.Start(ctx, "running")
 		defer span.End()
 
 		return f(ctx, transaction.NewClient(tx))
@@ -111,7 +111,7 @@ func (c *client) withTransaction(ctx context.Context, forWriting bool, f WithTra
 }
 
 func (c *client) commit(ctx context.Context, tx *sql.Tx) error {
-	ctx, span := otel.Tracer.Start(ctx, "commit")
+	ctx, span := otel.Start(ctx, "commit")
 	defer span.End()
 
 	err := tx.Commit()
@@ -122,7 +122,7 @@ func (c *client) commit(ctx context.Context, tx *sql.Tx) error {
 }
 
 func (c *client) rollback(ctx context.Context, tx *sql.Tx) error {
-	ctx, span := otel.Tracer.Start(ctx, "rollback")
+	ctx, span := otel.Start(ctx, "rollback")
 	defer span.End()
 
 	err := tx.Rollback()
@@ -242,7 +242,7 @@ func (c *client) CloseStmt(closable Closable) error {
 // ReadObjects Scans the given rows, performs any necessary decryption, converts the data to objects of the given type,
 // and returns a slice of those objects.
 func (c *client) ReadObjects(ctx context.Context, rows Rows, typ reflect.Type, shouldDecrypt bool) ([]any, error) {
-	ctx, span := otel.Tracer.Start(ctx, "taking the lock")
+	ctx, span := otel.Start(ctx, "taking the lock")
 	c.connLock.RLock()
 	span.End()
 

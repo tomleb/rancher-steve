@@ -447,19 +447,33 @@ func (l *ListOptionIndexer) removeWatcher(key *watchKey) {
 /* Core methods */
 
 func (l *ListOptionIndexer) notifyEventAdded(ctx context.Context, key string, obj any, tx transaction.Client) error {
-	ctx, span := otel.Tracer.Start(ctx, "notifyEventAdded")
+	ctx, span := otel.Start(ctx, "notifyEventAdded")
 	defer span.End()
 
 	return l.notifyEvent(ctx, watch.Added, nil, obj, tx)
 }
 
 func (l *ListOptionIndexer) notifyEventModified(ctx context.Context, key string, obj any, tx transaction.Client) error {
-	ctx, span := otel.Tracer.Start(ctx, "notifyEventModified")
+	ctx, span := otel.Start(ctx, "notifyEventModified")
 	defer span.End()
 
-	oldObj, exists, err := l.GetByKey(key)
+	var (
+		oldObj any
+		exists bool
+		err    error
+	)
+	err = func() error {
+		_, span := otel.Start(ctx, "GetByKey")
+		defer span.End()
+
+		oldObj, exists, err = l.GetByKey(key)
+		if err != nil {
+			return fmt.Errorf("error getting old object: %w", err)
+		}
+		return nil
+	}()
 	if err != nil {
-		return fmt.Errorf("error getting old object: %w", err)
+		return err
 	}
 
 	if !exists {
@@ -470,7 +484,7 @@ func (l *ListOptionIndexer) notifyEventModified(ctx context.Context, key string,
 }
 
 func (l *ListOptionIndexer) notifyEventDeleted(ctx context.Context, key string, obj any, tx transaction.Client) error {
-	ctx, span := otel.Tracer.Start(ctx, "notifyEventDeleted")
+	ctx, span := otel.Start(ctx, "notifyEventDeleted")
 	defer span.End()
 
 	oldObj, exists, err := l.GetByKey(key)
@@ -492,13 +506,13 @@ func (l *ListOptionIndexer) notifyEvent(ctx context.Context, eventType watch.Eve
 
 	latestRV := acc.GetResourceVersion()
 
-	err = l.upsertEvent(tx, eventType, latestRV, obj)
+	err = l.upsertEvent(ctx, tx, eventType, latestRV, obj)
 	if err != nil {
 		return err
 	}
 
 	func() {
-		_, span := otel.Tracer.Start(ctx, "send to clients")
+		_, span := otel.Start(ctx, "send to clients")
 		defer span.End()
 
 		l.watchersLock.RLock()
@@ -521,7 +535,10 @@ func (l *ListOptionIndexer) notifyEvent(ctx context.Context, eventType watch.Eve
 	return nil
 }
 
-func (l *ListOptionIndexer) upsertEvent(tx transaction.Client, eventType watch.EventType, latestRV string, obj any) error {
+func (l *ListOptionIndexer) upsertEvent(ctx context.Context, tx transaction.Client, eventType watch.EventType, latestRV string, obj any) error {
+	ctx, span := otel.Start(ctx, "upsertEvent")
+	defer span.End()
+
 	objBytes := toBytes(obj)
 	var dataNonce []byte
 	var err error
@@ -627,7 +644,7 @@ func (l *ListOptionIndexer) deleteLabels(ctx context.Context, tx transaction.Cli
 //   - a continue token, if there are more pages after the returned one
 //   - an error instead of all of the above if anything went wrong
 func (l *ListOptionIndexer) ListByOptions(ctx context.Context, lo *sqltypes.ListOptions, partitions []partition.Partition, namespace string) (*unstructured.UnstructuredList, int, string, error) {
-	ctx, span := steveotel.Tracer.Start(ctx, "ListOptionIndexer.ListByOptions")
+	ctx, span := steveotel.Start(ctx, "ListOptionIndexer.ListByOptions")
 	defer span.End()
 
 	queryInfo, err := l.constructQuery(lo, partitions, namespace, db.Sanitize(l.GetName()))
@@ -867,7 +884,7 @@ func (l *ListOptionIndexer) executeQuery(ctx context.Context, queryInfo *QueryIn
 
 	var items []any
 	err = l.WithTransaction(ctx, false, func(ctx context.Context, tx transaction.Client) error {
-		ctx, span := steveotel.Tracer.Start(ctx, "SQL transaction")
+		ctx, span := steveotel.Start(ctx, "SQL transaction")
 		defer span.End()
 
 		txStmt := tx.Stmt(stmt)

@@ -5,6 +5,7 @@ package sqlpartition
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rancher/apiserver/pkg/types"
 	"github.com/rancher/steve/pkg/accesscontrol"
@@ -150,4 +151,19 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr types
 	}()
 
 	return response, nil
+}
+
+func (s *Store) StartTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	fmt.Println("SQL Parti Start trace")
+	store := s.Partitioner.Store()
+	if tracerStore, ok := store.(TracerUnstructuredStore); ok {
+		tracerStore.StartTrace(apiOp, schema)
+	}
+}
+
+func (s *Store) StopTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	store := s.Partitioner.Store()
+	if tracerStore, ok := store.(TracerUnstructuredStore); ok {
+		tracerStore.StopTrace(apiOp, schema)
+	}
 }

@@ -780,7 +780,7 @@ func (s *Store) Delete(apiOp *types.APIRequest, schema *types.APISchema, id stri
 //   - a continue token, if there are more pages after the returned one
 //   - an error instead of all of the above if anything went wrong
 func (s *Store) ListByPartitions(apiOp *types.APIRequest, apiSchema *types.APISchema, partitions []partition.Partition) (*unstructured.UnstructuredList, int, string, error) {
-	ctx, span := steveotel.Tracer.Start(apiOp.Context(), "ListByPartitions")
+	ctx, span := steveotel.RootStart(apiOp.Context(), "ListByPartitions")
 	defer span.End()
 	apiOp = apiOp.WithContext(ctx)
 
@@ -799,7 +799,7 @@ func (s *Store) ListByPartitions(apiOp *types.APIRequest, apiSchema *types.APISc
 	tableClient := &tablelistconvert.Client{ResourceInterface: client}
 	ns := attributes.Namespaced(apiSchema)
 
-	_, span2 := steveotel.Tracer.Start(apiOp.Context(), "CacheFor")
+	_, span2 := steveotel.Start(apiOp.Context(), "CacheFor")
 	inf, err := s.cacheFactory.CacheFor(s.ctx, fields, externalGVKDependencies[gvk], selfGVKDependencies[gvk], transformFunc, tableClient, gvk, ns, controllerschema.IsListWatchable(apiSchema))
 	if err != nil {
 		span2.End()
@@ -826,11 +826,6 @@ func (s *Store) ListByPartitions(apiOp *types.APIRequest, apiSchema *types.APISc
 	}
 
 	span.AddEvent("parsed query")
-
-	q := apiOp.Request.URL.Query()
-	if q.Has("restart-trace") {
-		inf.RestartTrace()
-	}
 
 	if gvk.Group == "ext.cattle.io" && (gvk.Kind == "Token" || gvk.Kind == "Kubeconfig") {
 		accessSet := accesscontrol.AccessSetFromAPIRequest(apiOp)
@@ -913,4 +908,40 @@ func (s *Store) watchByPartition(partition partition.Partition, apiOp *types.API
 		return s.Watch(apiOp, schema, wr)
 	}
 	return s.WatchNames(apiOp, schema, wr, partition.Names)
+}
+
+func (s *Store) StartTrace(apiOp *types.APIRequest, apiSchema *types.APISchema) {
+	// warnings from inside the informer are discarded
+	buffer := WarningBuffer{}
+	client, _ := s.clientGetter.TableAdminClient(apiOp, apiSchema, "", &buffer)
+
+	gvk := attributes.GVK(apiSchema)
+	fields := getFieldsFromSchema(apiSchema)
+	fields = append(fields, getFieldForGVK(gvk)...)
+	cols := common.GetColumnDefinitions(apiSchema)
+
+	transformFunc := s.transformBuilder.GetTransformFunc(gvk, cols, attributes.IsCRD(apiSchema))
+	tableClient := &tablelistconvert.Client{ResourceInterface: client}
+	ns := attributes.Namespaced(apiSchema)
+
+	inf, _ := s.cacheFactory.CacheFor(s.ctx, fields, externalGVKDependencies[gvk], selfGVKDependencies[gvk], transformFunc, tableClient, gvk, ns, controllerschema.IsListWatchable(apiSchema))
+	inf.StartTrace()
+}
+
+func (s *Store) StopTrace(apiOp *types.APIRequest, apiSchema *types.APISchema) {
+	// warnings from inside the informer are discarded
+	buffer := WarningBuffer{}
+	client, _ := s.clientGetter.TableAdminClient(apiOp, apiSchema, "", &buffer)
+
+	gvk := attributes.GVK(apiSchema)
+	fields := getFieldsFromSchema(apiSchema)
+	fields = append(fields, getFieldForGVK(gvk)...)
+	cols := common.GetColumnDefinitions(apiSchema)
+
+	transformFunc := s.transformBuilder.GetTransformFunc(gvk, cols, attributes.IsCRD(apiSchema))
+	tableClient := &tablelistconvert.Client{ResourceInterface: client}
+	ns := attributes.Namespaced(apiSchema)
+
+	inf, _ := s.cacheFactory.CacheFor(s.ctx, fields, externalGVKDependencies[gvk], selfGVKDependencies[gvk], transformFunc, tableClient, gvk, ns, controllerschema.IsListWatchable(apiSchema))
+	inf.StopTrace()
 }

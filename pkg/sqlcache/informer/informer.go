@@ -36,8 +36,12 @@ type Informer struct {
 	s *sqlStore.Store
 }
 
-func (i *Informer) RestartTrace() {
-	i.s.RestartTrace()
+func (i *Informer) StartTrace() {
+	i.s.StartTrace()
+}
+
+func (i *Informer) StopTrace() {
+	i.s.StopTrace()
 }
 
 type WatchOptions struct {

@@ -27,7 +27,7 @@ var (
 )
 
 func HandleHelmData(request *types.APIRequest, resource *types.RawResource) {
-	ctx, span := otel.Tracer.Start(request.Context(), "Formatter HandleHelmData")
+	ctx, span := otel.Start(request.Context(), "Formatter HandleHelmData")
 	defer span.End()
 	request = request.WithContext(ctx)
 
@@ -66,7 +66,7 @@ func HandleHelmData(request *types.APIRequest, resource *types.RawResource) {
 }
 
 func Pod(request *types.APIRequest, resource *types.RawResource) {
-	ctx, span := otel.Tracer.Start(request.Context(), "Formatter Pod")
+	ctx, span := otel.Start(request.Context(), "Formatter Pod")
 	defer span.End()
 	request = request.WithContext(ctx)
 

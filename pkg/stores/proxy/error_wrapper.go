@@ -54,6 +54,18 @@ func (e *ErrorStore) Watch(apiOp *types.APIRequest, schema *types.APISchema, wr 
 	return data, translateError(err)
 }
 
+func (e *ErrorStore) StartTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := e.Store.(types.TracerStore); ok {
+		tracerStore.StartTrace(apiOp, schema)
+	}
+}
+
+func (e *ErrorStore) StopTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := e.Store.(types.TracerStore); ok {
+		tracerStore.StopTrace(apiOp, schema)
+	}
+}
+
 func translateError(err error) error {
 	if apiError, ok := err.(errors.APIStatus); ok {
 		status := apiError.Status()

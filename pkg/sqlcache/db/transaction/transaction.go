@@ -78,7 +78,7 @@ func (s *tracedStmt) Query(args ...any) (*sql.Rows, error) {
 }
 
 func (s *tracedStmt) QueryContext(ctx context.Context, args ...any) (*sql.Rows, error) {
-	ctx, span := otel.Tracer.Start(ctx, "QueryContext",
+	ctx, span := otel.Start(ctx, "QueryContext",
 		trace.WithAttributes(attribute.String("query", s.query)),
 		trace.WithAttributes(attribute.String("params", fmt.Sprintf("%v", args))),
 	)

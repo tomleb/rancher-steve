@@ -64,3 +64,15 @@ func (s *Store) Watch(apiOp *types.APIRequest, schema *types.APISchema, w types.
 	m.RecordProxyStoreResponseTime(err, float64(time.Since(storeStart).Milliseconds()))
 	return apiEvent, err
 }
+
+func (s *Store) StartTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := s.Store.(types.TracerStore); ok {
+		tracerStore.StartTrace(apiOp, schema)
+	}
+}
+
+func (s *Store) StopTrace(apiOp *types.APIRequest, schema *types.APISchema) {
+	if tracerStore, ok := s.Store.(types.TracerStore); ok {
+		tracerStore.StopTrace(apiOp, schema)
+	}
+}

@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -84,15 +85,16 @@ type Store struct {
 // Test that Store implements cache.Indexer
 var _ cache.Store = (*Store)(nil)
 
-func (s *Store) RestartTrace() {
-	fmt.Println("HITHERE Restarting trace", s.name)
-	traceCtx, span := otel.Tracer.Start(s.ctx, "Store",
+func (s *Store) StartTrace() {
+	fmt.Println("HITHERE Starting new trace", s.name)
+	hostname, _ := os.Hostname()
+	traceCtx, span := otel.RootStart(s.ctx, "Store",
 		trace.WithAttributes(attribute.String("name", s.name)),
+		trace.WithAttributes(attribute.String("hostname", hostname)),
 	)
 	newInfo := &traceInfo{
 		ctx: traceCtx,
 		endSpanFunc: func() {
-			fmt.Println("span end", s.name)
 			span.End()
 		},
 	}
@@ -102,8 +104,19 @@ func (s *Store) RestartTrace() {
 	}
 }
 
+func (s *Store) StopTrace() {
+	fmt.Println("HITHERE Stopping trace", s.name)
+	oldInfo := s.trace.Swap(nil)
+	if oldInfo != nil {
+		oldInfo.endSpanFunc()
+	}
+}
+
 func (s *Store) getContext() context.Context {
 	info := s.trace.Load()
+	if info == nil {
+		return s.ctx
+	}
 	return info.ctx
 }
 
@@ -124,7 +137,6 @@ func NewStore(ctx context.Context, example any, keyFunc cache.KeyFunc, c db.Clie
 		afterDelete:        []func(ctx context.Context, key string, obj any, tx transaction.Client) error{},
 		afterDeleteAll:     []func(ctx context.Context, tx transaction.Client) error{},
 	}
-	defer s.RestartTrace()
 
 	dbName := db.Sanitize(s.name)
 
@@ -374,7 +386,7 @@ func (s *Store) Add(obj any) error {
 		return err
 	}
 
-	ctx, span := otel.Tracer.Start(s.getContext(), "Store.Add",
+	ctx, span := otel.Start(s.getContext(), "Store.Add",
 		trace.WithAttributes(
 			attribute.String("rv", metaObj.GetResourceVersion()),
 			attribute.String("key", key),
@@ -415,7 +427,7 @@ func (s *Store) Update(obj any) error {
 		return err
 	}
 
-	ctx, span := otel.Tracer.Start(s.getContext(), "Store.Update",
+	ctx, span := otel.Start(s.getContext(), "Store.Update",
 		trace.WithAttributes(
 			attribute.String("rv", metaObj.GetResourceVersion()),
 			attribute.String("key", key),
@@ -456,7 +468,7 @@ func (s *Store) Delete(obj any) error {
 		return err
 	}
 
-	ctx, span := otel.Tracer.Start(s.getContext(), "Store.Delete",
+	ctx, span := otel.Start(s.getContext(), "Store.Delete",
 		trace.WithAttributes(
 			attribute.String("rv", metaObj.GetResourceVersion()),
 			attribute.String("key", key),

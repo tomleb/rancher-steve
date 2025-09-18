@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/tools/cache"
 
 	"github.com/rancher/steve/pkg/sqlcache/db"
 	"github.com/rancher/steve/pkg/sqlcache/partition"
@@ -33,7 +32,7 @@ import (
 
 // ListOptionIndexer extends Indexer by allowing queries based on ListOption
 type ListOptionIndexer struct {
-	*Indexer
+	Store
 
 	namespaced    bool
 	indexedFields []string
@@ -166,11 +165,6 @@ func NewListOptionIndexer(ctx context.Context, s Store, opts ListOptionIndexerOp
 	gob.Register(map[string]interface{}{})
 	gob.Register([]interface{}{})
 
-	i, err := NewIndexer(ctx, cache.Indexers{}, s)
-	if err != nil {
-		return nil, err
-	}
-
 	var indexedFields []string
 	for _, f := range defaultIndexedFields {
 		indexedFields = append(indexedFields, f)
@@ -183,7 +177,7 @@ func NewListOptionIndexer(ctx context.Context, s Store, opts ListOptionIndexerOp
 	}
 
 	l := &ListOptionIndexer{
-		Indexer:       i,
+		Store:         s,
 		namespaced:    opts.IsNamespaced,
 		indexedFields: indexedFields,
 		watchers:      make(map[*watchKey]*watcher),
@@ -208,14 +202,14 @@ func NewListOptionIndexer(ctx context.Context, s Store, opts ListOptionIndexerOp
 		columnDefs[index] = column
 	}
 
-	dbName := db.Sanitize(i.GetName())
+	dbName := db.Sanitize(s.GetName())
 	columns := make([]string, len(indexedFields))
 	qmarks := make([]string, len(indexedFields))
 	setStatements := make([]string, len(indexedFields))
 
-	err = l.WithTransaction(ctx, true, func(tx transaction.Client) error {
+	err := l.WithTransaction(ctx, true, func(tx transaction.Client) error {
 		createEventsTableQuery := fmt.Sprintf(createEventsTableFmt, dbName)
-		_, err = tx.Exec(createEventsTableQuery)
+		_, err := tx.Exec(createEventsTableQuery)
 		if err != nil {
 			return &db.QueryError{QueryString: createEventsTableFmt, Err: err}
 		}

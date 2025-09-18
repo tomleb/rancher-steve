@@ -7,15 +7,18 @@ package informer
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sort"
 	"strconv"
 	"time"
 
 	"github.com/rancher/steve/pkg/sqlcache/db"
+	"github.com/rancher/steve/pkg/sqlcache/db/transaction"
 	"github.com/rancher/steve/pkg/sqlcache/partition"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
 	sqlStore "github.com/rancher/steve/pkg/sqlcache/store"
 	"github.com/sirupsen/logrus"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -27,11 +30,27 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+type Store interface {
+	db.Client
+	cache.Store
+
+	GetByKey(key string) (item any, exists bool, err error)
+	GetName() string
+	RegisterAfterAdd(f func(key string, obj any, tx transaction.Client) error)
+	RegisterAfterUpdate(f func(key string, obj any, tx transaction.Client) error)
+	RegisterAfterDelete(f func(key string, obj any, tx transaction.Client) error)
+	RegisterAfterDeleteAll(f func(tx transaction.Client) error)
+	RegisterBeforeDropAll(f func(tx transaction.Client) error)
+	GetShouldEncrypt() bool
+	GetType() reflect.Type
+	DropAll(ctx context.Context) error
+}
+
 var defaultRefreshTime = 5 * time.Second
 
-// Informer is a SQLite-backed cache.SharedIndexInformer that can execute queries on listprocessor structs
+// Informer is a SQLite-backed cache.Controller that can execute queries on listprocessor structs
 type Informer struct {
-	cache.SharedIndexInformer
+	Controller cache.Controller
 	ByOptionsLister
 }
 
@@ -53,9 +72,6 @@ type ByOptionsLister interface {
 	RunGC(context.Context)
 	DropAll(context.Context) error
 }
-
-// this is set to a var so that it can be overridden by test code for mocking purposes
-var newInformer = cache.NewSharedIndexInformer
 
 // NewInformer returns a new SQLite-backed Informer for the type specified by schema in unstructured.Unstructured form
 // using the specified client
@@ -107,21 +123,52 @@ func NewInformer(ctx context.Context, client dynamic.ResourceInterface, fields [
 	// We therefore just disable it right away.
 	resyncPeriod := time.Duration(0)
 
-	// In non-test mode `newInformer` is cache.NewSharedIndexInformer
-	// defined in k8s.io/client-go/tools/cache/shared_informer.go : func NewSharedIndexInformer(lw ...
-	sii := newInformer(listWatcher, example, resyncPeriod, cache.Indexers{})
-	if transform != nil {
-		if err := sii.SetTransform(transform); err != nil {
-			return nil, err
-		}
-	}
-
 	name := informerNameFromGVK(gvk)
 
 	s, err := sqlStore.NewStore(ctx, example, cache.DeletionHandlingMetaNamespaceKeyFunc, db, shouldEncrypt, gvk, name, externalUpdateInfo, selfUpdateInfo)
 	if err != nil {
 		return nil, err
 	}
+
+	fifo := cache.NewRealFIFO(cache.MetaNamespaceKeyFunc, s, transform)
+
+	controller := cache.New(&cache.Config{
+		Queue:            fifo,
+		ListerWatcher:    listWatcher,
+		ObjectType:       example,
+		FullResyncPeriod: resyncPeriod,
+		Process: func(obj interface{}, isInInitialList bool) error {
+			if deltas, ok := obj.(cache.Deltas); ok {
+				for _, d := range deltas {
+					obj := d.Object
+					switch d.Type {
+					case cache.Sync, cache.Replaced, cache.Added, cache.Updated:
+						if _, exists, err := s.Get(obj); err == nil && exists {
+							if err := s.Update(obj); err != nil {
+								return err
+							}
+						} else {
+							if err := s.Add(obj); err != nil {
+								return err
+							}
+						}
+					case cache.Deleted:
+						if err := s.Delete(obj); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			return errors.New("object given as Process argument is not Deltas")
+		},
+		WatchErrorHandler: func(r *cache.Reflector, err error) {
+			if !watchable && apierrors.IsMethodNotSupported(err) {
+				// expected, continue without logging
+				return
+			}
+			cache.DefaultWatchErrorHandler(ctx, r, err)
+		},
+	})
 
 	opts := ListOptionIndexerOptions{
 		Fields:       fields,
@@ -134,29 +181,30 @@ func NewInformer(ctx context.Context, client dynamic.ResourceInterface, fields [
 		return nil, err
 	}
 
-	// HACK: replace the default informer's indexer with the SQL based one
-	UnsafeSet(sii, "indexer", loi)
-
 	return &Informer{
-		SharedIndexInformer: sii,
-		ByOptionsLister:     loi,
+		Controller:      controller,
+		ByOptionsLister: loi,
 	}, nil
 }
 
-// Run implements [cache.SharedIndexInformer]
+// Run implements [cache.Controller]
 func (i *Informer) Run(stopCh <-chan struct{}) {
 	var wg wait.Group
-	wg.StartWithChannel(stopCh, i.SharedIndexInformer.Run)
+	wg.StartWithChannel(stopCh, i.Controller.Run)
 	wg.StartWithContext(wait.ContextForChannel(stopCh), i.ByOptionsLister.RunGC)
 	wg.Wait()
 }
 
-// RunWithContext implements [cache.SharedIndexInformer]
+// RunWithContext implements [cache.Controller]
 func (i *Informer) RunWithContext(ctx context.Context) {
 	var wg wait.Group
-	wg.StartWithContext(ctx, i.SharedIndexInformer.RunWithContext)
+	wg.StartWithContext(ctx, i.Controller.RunWithContext)
 	wg.StartWithContext(ctx, i.ByOptionsLister.RunGC)
 	wg.Wait()
+}
+
+func (i *Informer) HasSynced() bool {
+	return i.Controller.HasSynced()
 }
 
 // ListByOptions returns objects according to the specified list options and partitions.

@@ -125,22 +125,9 @@ func TestNewListOptionIndexer(t *testing.T) {
 		store := NewMockStore(gomock.NewController(t))
 		fields := [][]string{{"something"}}
 		id := "somename"
-		stmt := &sql.Stmt{}
-		// logic for NewIndexer(), only interested in if this results in error or not
 		store.EXPECT().GetName().Return(id).AnyTimes()
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		store.EXPECT().WithTransaction(gomock.Any(), true, gomock.Any()).Return(nil).Do(
-			func(ctx context.Context, shouldEncrypt bool, f db.WithTransactionFunction) {
-				err := f(txClient)
-				if err != nil {
-					t.Fail()
-				}
-			})
-		store.EXPECT().RegisterAfterAdd(gomock.Any())
-		store.EXPECT().RegisterAfterUpdate(gomock.Any())
+		stmt := &sql.Stmt{}
 		store.EXPECT().Prepare(gomock.Any()).Return(stmt).AnyTimes()
-		// end NewIndexer() logic
 
 		store.EXPECT().RegisterAfterAdd(gomock.Any()).Times(3)
 		store.EXPECT().RegisterAfterUpdate(gomock.Any()).Times(3)
@@ -175,50 +162,13 @@ func TestNewListOptionIndexer(t *testing.T) {
 		assert.Nil(t, err)
 		assert.NotNil(t, loi)
 	}})
-	tests = append(tests, testCase{description: "NewListOptionIndexer() with error returned from NewIndexer(), should return an error", test: func(t *testing.T) {
-		txClient := NewMockTXClient(gomock.NewController(t))
-		store := NewMockStore(gomock.NewController(t))
-		fields := [][]string{{"something"}}
-		id := "somename"
-		// logic for NewIndexer(), only interested in if this results in error or not
-		store.EXPECT().GetName().Return(id).AnyTimes()
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		store.EXPECT().WithTransaction(gomock.Any(), true, gomock.Any()).Return(fmt.Errorf("error")).Do(
-			func(ctx context.Context, shouldEncrypt bool, f db.WithTransactionFunction) {
-				err := f(txClient)
-				if err != nil {
-					t.Fail()
-				}
-			})
-
-		opts := ListOptionIndexerOptions{
-			Fields: fields,
-		}
-		_, err := NewListOptionIndexer(context.Background(), store, opts)
-		assert.NotNil(t, err)
-	}})
 	tests = append(tests, testCase{description: "NewListOptionIndexer() with error returned from Begin(), should return an error", test: func(t *testing.T) {
-		txClient := NewMockTXClient(gomock.NewController(t))
 		store := NewMockStore(gomock.NewController(t))
 		fields := [][]string{{"something"}}
 		id := "somename"
 		stmt := &sql.Stmt{}
-		// logic for NewIndexer(), only interested in if this results in error or not
 		store.EXPECT().GetName().Return(id).AnyTimes()
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		store.EXPECT().WithTransaction(gomock.Any(), true, gomock.Any()).Return(nil).Do(
-			func(ctx context.Context, shouldEncrypt bool, f db.WithTransactionFunction) {
-				err := f(txClient)
-				if err != nil {
-					t.Fail()
-				}
-			})
-		store.EXPECT().RegisterAfterAdd(gomock.Any())
-		store.EXPECT().RegisterAfterUpdate(gomock.Any())
 		store.EXPECT().Prepare(gomock.Any()).Return(stmt).AnyTimes()
-		// end NewIndexer() logic
 
 		store.EXPECT().RegisterAfterAdd(gomock.Any()).Times(3)
 		store.EXPECT().RegisterAfterUpdate(gomock.Any()).Times(3)
@@ -240,21 +190,8 @@ func TestNewListOptionIndexer(t *testing.T) {
 		fields := [][]string{{"something"}}
 		id := "somename"
 		stmt := &sql.Stmt{}
-		// logic for NewIndexer(), only interested in if this results in error or not
 		store.EXPECT().GetName().Return(id).AnyTimes()
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		store.EXPECT().WithTransaction(gomock.Any(), true, gomock.Any()).Return(nil).Do(
-			func(ctx context.Context, shouldEncrypt bool, f db.WithTransactionFunction) {
-				err := f(txClient)
-				if err != nil {
-					t.Fail()
-				}
-			})
-		store.EXPECT().RegisterAfterAdd(gomock.Any())
-		store.EXPECT().RegisterAfterUpdate(gomock.Any())
 		store.EXPECT().Prepare(gomock.Any()).Return(stmt).AnyTimes()
-		// end NewIndexer() logic
 
 		store.EXPECT().RegisterAfterAdd(gomock.Any()).Times(3)
 		store.EXPECT().RegisterAfterUpdate(gomock.Any()).Times(3)
@@ -286,21 +223,8 @@ func TestNewListOptionIndexer(t *testing.T) {
 		fields := [][]string{{"something"}}
 		id := "somename"
 		stmt := &sql.Stmt{}
-		// logic for NewIndexer(), only interested in if this results in error or not
 		store.EXPECT().GetName().Return(id).AnyTimes()
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		store.EXPECT().WithTransaction(gomock.Any(), true, gomock.Any()).Return(nil).Do(
-			func(ctx context.Context, shouldEncrypt bool, f db.WithTransactionFunction) {
-				err := f(txClient)
-				if err != nil {
-					t.Fail()
-				}
-			})
-		store.EXPECT().RegisterAfterAdd(gomock.Any())
-		store.EXPECT().RegisterAfterUpdate(gomock.Any())
 		store.EXPECT().Prepare(gomock.Any()).Return(stmt).AnyTimes()
-		// end NewIndexer() logic
 
 		store.EXPECT().RegisterAfterAdd(gomock.Any()).Times(3)
 		store.EXPECT().RegisterAfterUpdate(gomock.Any()).Times(3)
@@ -336,21 +260,8 @@ func TestNewListOptionIndexer(t *testing.T) {
 		fields := [][]string{{"something"}}
 		id := "somename"
 		stmt := &sql.Stmt{}
-		// logic for NewIndexer(), only interested in if this results in error or not
 		store.EXPECT().GetName().Return(id).AnyTimes()
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		txClient.EXPECT().Exec(gomock.Any()).Return(nil, nil)
-		store.EXPECT().WithTransaction(gomock.Any(), true, gomock.Any()).Return(nil).Do(
-			func(ctx context.Context, shouldEncrypt bool, f db.WithTransactionFunction) {
-				err := f(txClient)
-				if err != nil {
-					t.Fail()
-				}
-			})
-		store.EXPECT().RegisterAfterAdd(gomock.Any())
-		store.EXPECT().RegisterAfterUpdate(gomock.Any())
 		store.EXPECT().Prepare(gomock.Any()).Return(stmt).AnyTimes()
-		// end NewIndexer() logic
 
 		store.EXPECT().RegisterAfterAdd(gomock.Any()).Times(3)
 		store.EXPECT().RegisterAfterUpdate(gomock.Any()).Times(3)
@@ -2455,11 +2366,8 @@ SELECT DISTINCT o.object, o.objectnonce, o.dekid FROM "something" o
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			store := NewMockStore(gomock.NewController(t))
-			i := &Indexer{
-				Store: store,
-			}
 			lii := &ListOptionIndexer{
-				Indexer:       i,
+				Store:         store,
 				indexedFields: []string{"metadata.queryField1", "status.queryField2", "spec.containers.image", "metadata.name", "metadata.namespace"},
 			}
 			if test.description == "TestConstructQuery: handles ProjectOrNamespaces NOT IN" {

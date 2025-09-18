@@ -15,7 +15,6 @@ import (
 	"github.com/rancher/steve/pkg/sqlcache/encryption"
 	"github.com/rancher/steve/pkg/sqlcache/informer"
 	"github.com/rancher/steve/pkg/sqlcache/sqltypes"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -174,18 +173,6 @@ func (f *CacheFactory) cacheForLocked(ctx context.Context, gi *guardedInformer, 
 		// In non-test code this invokes pkg/sqlcache/informer/informer.go: NewInformer()
 		// search for "func NewInformer(ctx"
 		i, err := f.newInformer(gi.ctx, client, fields, externalUpdateInfo, selfUpdateInfo, transform, gvk, f.dbClient, shouldEncrypt, namespaced, watchable, f.gcInterval, f.gcKeepCount)
-		if err != nil {
-			gi.informerMutex.Unlock()
-			return nil, err
-		}
-
-		err = i.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
-			if !watchable && errors.IsMethodNotSupported(err) {
-				// expected, continue without logging
-				return
-			}
-			cache.DefaultWatchErrorHandler(ctx, r, err)
-		})
 		if err != nil {
 			gi.informerMutex.Unlock()
 			return nil, err

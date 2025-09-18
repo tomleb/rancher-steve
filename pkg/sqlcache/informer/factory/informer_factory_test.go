@@ -20,7 +20,7 @@ import (
 //go:generate go run go.uber.org/mock/mockgen@latest --build_flags=--mod=mod -package factory -destination ./db_mocks_test.go github.com/rancher/steve/pkg/sqlcache/db Client
 //go:generate go run go.uber.org/mock/mockgen@latest --build_flags=--mod=mod -package factory -destination ./transaction_mocks_tests.go -mock_names Client=MockTXClient github.com/rancher/steve/pkg/sqlcache/db/transaction Client
 //go:generate go run go.uber.org/mock/mockgen@latest --build_flags=--mod=mod -package factory -destination ./dynamic_mocks_test.go k8s.io/client-go/dynamic ResourceInterface
-//go:generate go run go.uber.org/mock/mockgen@latest --build_flags=--mod=mod -package factory -destination ./k8s_cache_mocks_test.go k8s.io/client-go/tools/cache SharedIndexInformer
+//go:generate go run go.uber.org/mock/mockgen@latest --build_flags=--mod=mod -package factory -destination ./k8s_cache_mocks_test.go k8s.io/client-go/tools/cache Controller
 //go:generate go run go.uber.org/mock/mockgen@latest --build_flags=--mod=mod -package factory -destination ./sql_informer_mocks_test.go github.com/rancher/steve/pkg/sqlcache/informer ByOptionsLister
 
 func TestNewCacheFactory(t *testing.T) {
@@ -68,14 +68,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true).AnyTimes()
-		sii.EXPECT().Run(gomock.Any()).MinTimes(1)
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true).AnyTimes()
+		ctrl.EXPECT().Run(gomock.Any()).MinTimes(1)
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,
@@ -121,14 +120,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(false).AnyTimes()
-		sii.EXPECT().Run(gomock.Any())
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(false).AnyTimes()
+		ctrl.EXPECT().Run(gomock.Any())
 		expectedI := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		testNewInformer := func(ctx context.Context, client dynamic.ResourceInterface, fields [][]string, externalUpdateInfo *sqltypes.ExternalGVKUpdates, selfUpdateInfo *sqltypes.ExternalGVKUpdates, transform cache.TransformFunc, gvk schema.GroupVersionKind, db db.Client, shouldEncrypt bool, namespaced bool, watchable bool, gcInterval time.Duration, gcKeepCount int) (*informer.Informer, error) {
 			assert.Equal(t, client, dynamicClient)
@@ -164,14 +162,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(false).AnyTimes()
-		sii.EXPECT().Run(gomock.Any())
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(false).AnyTimes()
+		ctrl.EXPECT().Run(gomock.Any())
 		expectedI := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		testNewInformer := func(ctx context.Context, client dynamic.ResourceInterface, fields [][]string, externalUpdateInfo *sqltypes.ExternalGVKUpdates, selfUpdateInfo *sqltypes.ExternalGVKUpdates, transform cache.TransformFunc, gvk schema.GroupVersionKind, db db.Client, shouldEncrypt bool, namespaced bool, watchable bool, gcInterval time.Duration, gcKeepCount int) (*informer.Informer, error) {
 			assert.Equal(t, client, dynamicClient)
@@ -215,15 +212,14 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true).AnyTimes()
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true).AnyTimes()
 		// may or may not call run initially
-		sii.EXPECT().Run(gomock.Any()).MaxTimes(1)
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl.EXPECT().Run(gomock.Any()).MaxTimes(1)
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,
@@ -260,14 +256,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true)
-		sii.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true)
+		ctrl.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,
@@ -313,14 +308,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true)
-		sii.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true)
+		ctrl.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,
@@ -365,14 +359,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true)
-		sii.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true)
+		ctrl.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,
@@ -414,17 +407,16 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true)
-		sii.EXPECT().Run(gomock.Any()).MinTimes(1)
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true)
+		ctrl.EXPECT().Run(gomock.Any()).MinTimes(1)
 		transformFunc := func(input interface{}) (interface{}, error) {
 			return "someoutput", nil
 		}
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,
@@ -475,14 +467,13 @@ func TestCacheFor(t *testing.T) {
 		bloi := NewMockByOptionsLister(gomock.NewController(t))
 		bloi.EXPECT().RunGC(gomock.Any()).AnyTimes()
 		bloi.EXPECT().DropAll(gomock.Any()).AnyTimes()
-		sii := NewMockSharedIndexInformer(gomock.NewController(t))
-		sii.EXPECT().HasSynced().Return(true)
-		sii.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
-		sii.EXPECT().SetWatchErrorHandler(gomock.Any())
+		ctrl := NewMockController(gomock.NewController(t))
+		ctrl.EXPECT().HasSynced().Return(true)
+		ctrl.EXPECT().Run(gomock.Any()).MinTimes(1).AnyTimes()
 		i := &informer.Informer{
 			// need to set this so Run function is not nil
-			SharedIndexInformer: sii,
-			ByOptionsLister:     bloi,
+			Controller:      ctrl,
+			ByOptionsLister: bloi,
 		}
 		expectedC := &Cache{
 			ByOptionsLister: i,

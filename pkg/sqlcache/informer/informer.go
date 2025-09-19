@@ -132,11 +132,12 @@ func NewInformer(ctx context.Context, client dynamic.ResourceInterface, fields [
 
 	fifo := cache.NewRealFIFO(cache.MetaNamespaceKeyFunc, s, transform)
 
-	controller := cache.New(&cache.Config{
+	cfg := &cache.Config{
 		Queue:            fifo,
 		ListerWatcher:    listWatcher,
 		ObjectType:       example,
 		FullResyncPeriod: resyncPeriod,
+		// Currently exactly the same as the SharedIndexInformer's process function
 		Process: func(obj interface{}, isInInitialList bool) error {
 			if deltas, ok := obj.(cache.Deltas); ok {
 				for _, d := range deltas {
@@ -168,7 +169,8 @@ func NewInformer(ctx context.Context, client dynamic.ResourceInterface, fields [
 			}
 			cache.DefaultWatchErrorHandler(ctx, r, err)
 		},
-	})
+	}
+	controller := cache.New(cfg)
 
 	opts := ListOptionIndexerOptions{
 		Fields:       fields,

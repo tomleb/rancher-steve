@@ -13,4 +13,4 @@ jobs:
     with:
       repository: ${{ github.repository }}
     secrets:
-      token: ${{ github.token }}
+      token: ${{ secrets.GITHUB_TOKEN }}

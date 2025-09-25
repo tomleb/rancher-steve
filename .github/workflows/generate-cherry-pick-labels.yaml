@@ -11,7 +11,6 @@ jobs:
       issues: write
     uses: tomleb/gha-tests/.github/workflows/generate-cherry-pick-labels.yaml@main
     with:
-      repository: ${{ github.repository }}
       branch-filter-regex: "^test-main|test-release/.*"
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}

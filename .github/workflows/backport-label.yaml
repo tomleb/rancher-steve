@@ -16,7 +16,8 @@ jobs:
       pull-requests: write
 
     # For now, only run if the PR is merged
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.label, 'cherry-pick/')
+    if: github.event.pull_request.merged == true
+    # && startsWith(github.event.pull_request.label, 'cherry-pick/')
     runs-on: ubuntu-latest
     steps:
       - run: |
@@ -29,6 +30,9 @@ jobs:
             done
             return 1
           }
+
+          printf '%s\n' "$CHERRY_PICK_LABEL"
+          printf '%s\n' "$LABELS"
 
           target="$(echo "$CHERRY_PICK_LABEL" | sed 's|cherry-pick/||')"
           if has_label "cherry-pick-done/$target"; then

@@ -5,9 +5,9 @@ on:
   pull_request:
     types: [labeled]
     # So I remember to only run this on PRs targetting release branches
-    # branches:
-    # - main
-    # - 'release/**'
+    branches:
+    - test-main
+    - 'test-release/**'
 
 jobs:
   backport-label:
@@ -17,63 +17,12 @@ jobs:
 
     # For now, only run if the PR is merged
     if: github.event.pull_request.merged == true && startsWith(github.event.label.name, 'cherry-pick/')
-    runs-on: ubuntu-latest
-    steps:
-      - id: detect
-        run: |
-          has_label() {
-            labels=$(printf '%s' "$LABELS" | jq -r '.[]')
-            for l in $labels; do
-              if [ "$l" = "$1" ]; then
-                return 0
-              fi
-            done
-            return 1
-          }
-
-          target="$(echo "$CHERRY_PICK_LABEL" | sed 's|cherry-pick/||')"
-          if has_label "cherry-pick-done/$target"; then
-            echo "Skipping $label ($target) because already cherry-picked"
-            echo "target-branch=" >> $GITHUB_OUTPUT
-            return 0
-          fi
-
-          echo "Need to create cherry-pick for $label ($target)"
-          echo "target-branch=$target" >> $GITHUB_OUTPUT
-        env:
-          CHERRY_PICK_LABEL: ${{ github.event.label.name }}
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-
-      - if: ${{ steps.detect.outputs.target-branch != '' }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-          persist-credentials: true
-          fetch-depth: 0
-
-      - run: |
-          git config --global user.email "tom.lebreux@suse.com"
-          git config --global user.name "Tom Lebreux <tom.lebreux@suse.com>"
-
-      - uses: tomleb/gha-tests/backport@main
-        if: ${{ steps.detect.outputs.target-branch != '' }}
-        id: backport
-        with:
-          pull-request: ${{ github.event.pull_request.number }}
-          target-branch: ${{ steps.detect.outputs.target-branch }}
-          repository: ${{ github.repository }}
-          is-draft: false
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-      - if: ${{ steps.detect.outputs.target-branch != '' }}
-        run: |
-          gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$TARGET"
-          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: $BACKPORT_PR_URL. See run for more details at: $RUN_URL"
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          BACKPORT_PR_URL: ${{ steps.backport.outputs.pr-url }}
-          TARGET: ${{ steps.detect.outputs.target-branch }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
+    uses: tomleb/gha-tests/.github/workflows/cherry-pick-from-labels.yaml@main
+    with:
+      label-added: ${{ github.event.label.name }}
+      all-labels-json: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+      pr-number: ${{ github.event.pull_request.number }}
+      git-user-email: "tom.lebreux@suse.com"
+      git-user-name: "Tom Lebreux <tom.lebreux@suse.com>"
+    secrets:
+      token: ${{ secrets.GH_TOKEN }}

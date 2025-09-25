@@ -22,8 +22,15 @@ jobs:
       #     fetch-depth: 0
 
       - run: |
-          echo "${{ toJSON(github.event.pull_request.labels) }}"
-          echo "${{ toJSON(github.event.pull_request.labels) }}" | jq -r '.[].name'
+          echo $ALL_LABELS
+          echo $JUST_NAMES
+          printf '%s\n' $ALL_LABELS
+          printf '%s\n' $JUST_NAMES
+          printf '%s' "$ALL_LABELS" | jq
+          printf '%s' "$JUST_NAMES" | jq
+        env:
+          ALL_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+          JUST_NAMES: ${{ toJSON(github.event.pull_request.labels.*.name) }}
 
 
       # - uses: tomleb/gha-tests/backport@main

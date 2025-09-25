@@ -22,11 +22,10 @@ jobs:
       #     fetch-depth: 0
 
       - run: |
-          echo The labels are: ${{ github.event.pull_request.labels }}
-          env
-        env:
-          LABELS: ${{ github.event.pull_request.labels }}
-          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels) }}
+          echo "PR_LABELS_JSON=${{ toJSON(github.event.pull_request.labels) }}" >> $GITHUB_ENV
+      - run: |
+          echo "${{ env.PR_LABELS_JSON }}"
+          echo "${{ env.PR_LABELS_JSON }}" | jq '.[].name'
 
 
       # - uses: tomleb/gha-tests/backport@main

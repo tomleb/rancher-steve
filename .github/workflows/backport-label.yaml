@@ -23,6 +23,11 @@ jobs:
 
       - run: |
           echo The labels are: ${{ github.event.pull_request.labels }}
+          env
+        env:
+          LABELS: ${{ github.event.pull_request.labels }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels) }}
+
 
       # - uses: tomleb/gha-tests/backport@main
       #   with:

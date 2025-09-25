@@ -24,6 +24,8 @@ jobs:
       - run: |
           echo "PR_LABELS_JSON=${{ toJSON(github.event.pull_request.labels) }}" >> $GITHUB_ENV
           gh pr -R ${{ github.repository }} view ${{ github.event.pull_request.number }} --json labels | jq -r '.labels[].name'
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - run: |
           echo "${{ env.PR_LABELS_JSON }}"

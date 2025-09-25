@@ -19,7 +19,8 @@ jobs:
     if: github.event.pull_request.merged == true && startsWith(github.event.label.name, 'cherry-pick/')
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - id: detect
+        run: |
           has_label() {
             labels=$(printf '%s' "$LABELS" | jq -r '.[]')
             for l in $labels; do
@@ -30,31 +31,33 @@ jobs:
             return 1
           }
 
-          printf '%s\n' "$CHERRY_PICK_LABEL"
-          printf '%s\n' "$LABELS"
-
           target="$(echo "$CHERRY_PICK_LABEL" | sed 's|cherry-pick/||')"
           if has_label "cherry-pick-done/$target"; then
             echo "Skipping $label ($target) because already cherry-picked"
+            echo "target-branch=" >> $GITHUB_OUTPUT
             return 0
           fi
 
           echo "Need to create cherry-pick for $label ($target)"
-          gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
-          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: <url>"
-
+          echo "target-branch=$target" >> $GITHUB_OUTPUT
         env:
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           CHERRY_PICK_LABEL: ${{ github.event.label.name }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+
+      - uses: tomleb/gha-tests/backport@main
+        if: ${{ steps.detect.outputs.target-branch != '' }}
+        with:
+          pull-request: ${{ github.event.pull_request.number }}
+          target-branch: ${{ steps.detect.outputs.target-branch }}
+          repository: ${{ github.repository }}
+          is-draft: false
+        env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      # - uses: tomleb/gha-tests/backport@main
-      #   with:
-      #     pull-request: ${{ github.event.inputs.pull-request }}
-      #     target-branch: ${{ github.event.inputs.target-branch }}
-      #     repository: "${{ github.repository }}"
-      #     is-draft: ${{ github.event.inputs.is-draft }}
-      #   env:
-      #     GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      - run: |
+          gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
+          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: <url>"
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}

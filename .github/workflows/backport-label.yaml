@@ -57,6 +57,7 @@ jobs:
 
       - uses: tomleb/gha-tests/backport@main
         if: ${{ steps.detect.outputs.target-branch != '' }}
+        id: backport
         with:
           pull-request: ${{ github.event.pull_request.number }}
           target-branch: ${{ steps.detect.outputs.target-branch }}
@@ -68,9 +69,10 @@ jobs:
       - if: ${{ steps.detect.outputs.target-branch != '' }}
         run: |
           gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$TARGET"
-          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: . See run for more details at: $RUN_URL"
+          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: $BACKPORT_PR_URL. See run for more details at: $RUN_URL"
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BACKPORT_PR_URL: ${{ steps.backport.outputs.pr-url }}
           TARGET: ${{ steps.detect.outputs.target-branch }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

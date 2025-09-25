@@ -12,7 +12,7 @@ on:
 jobs:
   backport-label:
     # For now, only run if the PR is merged
-    # if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       # - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
@@ -23,13 +23,10 @@ jobs:
 
       - run: |
           echo "PR_LABELS_JSON=${{ toJSON(github.event.pull_request.labels) }}" >> $GITHUB_ENV
-          gh pr -R ${{ github.repository }} view ${{ github.event.pull_request.number }} --json labels | jq -r '.labels[].name'
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - run: |
-          echo "${{ env.PR_LABELS_JSON }}"
-          echo "${{ env.PR_LABELS_JSON }}" | jq '.[].name'
+          echo "$PR_LABELS_JSON"
+          echo "$PR_LABELS_JSON" | jq '.[].name'
 
 
       # - uses: tomleb/gha-tests/backport@main

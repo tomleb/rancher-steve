@@ -1,10 +1,8 @@
 name: Backport label
 
 on:
-  # Documentation for pull_request event: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request
   pull_request:
     types: [labeled]
-    # So I remember to only run this on PRs targetting release branches
     branches:
     - test-backport-pr
     - test-main
@@ -13,8 +11,16 @@ on:
 jobs:
   backport-label:
     permissions:
-      # Necessary to add label
+      # Necessary to add cherry-pick-done/* label
       pull-requests: write
+      # Necessary to create the PR
+      #
+      # NOTE: We'll want to switch to an app token once we have one.
+      # Reason: GHA is designed to not trigger other workflows when creating a PR
+      # within a workflow run using the workflow run token.
+      #
+      # Temporary workaround is to close/re-open the PR in the UI. This will trigger
+      # the pull_request event.
       contents: write
 
     # For now, only run if the PR is merged

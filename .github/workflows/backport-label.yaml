@@ -20,6 +20,7 @@ jobs:
       #     token: ${{ secrets.GH_TOKEN }}
       #     persist-credentials: true
       #     fetch-depth: 0
+      #
 
       - run: |
           printf '%s\n' $ALL_LABELS

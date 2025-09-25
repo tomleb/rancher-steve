@@ -3,7 +3,7 @@ name: Backport label
 on:
   # Documentation for pull_request event: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request
   pull_request:
-    types: [labeled, closed]
+    types: [labeled]
     # So I remember to only run this on PRs targetting release branches
     # branches:
     # - main
@@ -16,43 +16,34 @@ jobs:
       pull-requests: write
 
     # For now, only run if the PR is merged
-    if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.label, 'cherry-pick/')
     runs-on: ubuntu-latest
     steps:
       - run: |
-          labels=$(printf '%s' "$LABELS" | jq -r '.[]')
-
           has_label() {
-              for l in $labels; do
-                if [ "$l" = "$1" ]; then
-                  return 0
-                fi
-              done
-              return 1
+            labels=$(printf '%s' "$LABELS" | jq -r '.[]')
+            for l in $labels; do
+              if [ "$l" = "$1" ]; then
+                return 0
+              fi
+            done
+            return 1
           }
 
-          for label in $labels; do
-            case $label in
-            cherry-pick/*) ;;
-            *)
-              echo "Not chosen $label"
-              continue
-              ;;
-            esac
+          target="$(echo "$CHERRY_PICK_LABEL" | sed 's|cherry-pick/||')"
+          if has_label "cherry-pick-done/$target"; then
+            echo "Skipping $label ($target) because already cherry-picked"
+            continue
+          fi
 
-            target="$(echo "$label" | sed 's|cherry-pick/||')"
-            if has_label "cherry-pick-done/$target"; then
-              echo "Skipping $label ($target) because already cherry-picked"
-              continue
-            fi
-
-            echo "Need to create cherry-pick for $label ($target)"
-            gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
-          done
+          echo "Need to create cherry-pick for $label ($target)"
+          gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
+          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: <url>"
 
         env:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHERRY_PICK_LABEL: ${{ github.event.pull_request.label }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 

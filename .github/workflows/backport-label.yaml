@@ -11,26 +11,50 @@ on:
 
 jobs:
   backport-label:
+    permissions:
+      # Necessary to add label
+      pull-requests: write
+
     # For now, only run if the PR is merged
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      # - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
-      #   with:
-      #     token: ${{ secrets.GH_TOKEN }}
-      #     persist-credentials: true
-      #     fetch-depth: 0
-      #
-
       - run: |
-          printf '%s\n' $ALL_LABELS
-          printf '%s\n' $JUST_NAMES
-          printf '%s' "$ALL_LABELS" | jq
-          printf '%s' "$JUST_NAMES" | jq
-        env:
-          ALL_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
-          JUST_NAMES: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          labels=$(printf '%s' "$LABELS" | jq -r '.[]')
 
+          has_label() {
+              for l in $labels; do
+                if [ "$l" = "$1" ]; then
+                  return 0
+                fi
+              done
+              return 1
+          }
+
+          for label in $labels; do
+            case $label in
+            cherry-pick/*) ;;
+            *)
+              echo "Not chosen $label"
+              continue
+              ;;
+            esac
+
+            target="$(echo "$label" | sed 's|cherry-pick/||')"
+            if has_label "cherry-pick-done/$target"; then
+              echo "Skipping $label ($target) because already cherry-picked"
+              continue
+            fi
+
+            echo "Need to create cherry-pick for $label ($target)"
+            gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
+          done
+
+        env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       # - uses: tomleb/gha-tests/backport@main
       #   with:

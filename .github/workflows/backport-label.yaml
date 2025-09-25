@@ -44,6 +44,13 @@ jobs:
           CHERRY_PICK_LABEL: ${{ github.event.label.name }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
 
+      - if: ${{ steps.detect.outputs.target-branch != '' }}
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          persist-credentials: true
+          fetch-depth: 0
+
       - uses: tomleb/gha-tests/backport@main
         if: ${{ steps.detect.outputs.target-branch != '' }}
         with:
@@ -54,7 +61,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      - run: |
+      - if: ${{ steps.detect.outputs.target-branch != '' }}
+        run: |
           gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
           gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: <url>"
         env:

@@ -9,31 +9,8 @@ jobs:
     permissions:
       # Necessary to create/edit labels
       issues: write
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          branches=$(gh api repos/$REPO/branches | jq -r '.[].name')
-
-          for branch in $branches; do
-            case $branch in
-            test-main|test-release/*) ;;
-            *)
-              continue
-              ;;
-            esac
-
-            echo "Creating or updating cherry-pick labels for branch $branch"
-            gh -R "$REPO" label create cherry-pick/$branch \
-              --description "Create cherry-pick PR for branch $branch" \
-              --color "$COLOR" \
-              --force
-            gh -R "$REPO" label create cherry-pick-done/$branch \
-              --description "Mark PR as already cherry-picked for branch $branch" \
-              --color "$DONE_COLOR" \
-              --force
-          done
-        env:
-          REPO: ${{ github.repository }}
-          COLOR: 38B395
-          DONE_COLOR: E99695
-          GH_TOKEN: ${{ github.token }}
+    uses: tomleb/gha-tests/.github/workflows/generate-cherry-pick-labels.yaml@main
+    with:
+      repository: ${{ github.repository }}
+    secrets:
+      token: ${{ github.token }}

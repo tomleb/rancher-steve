@@ -15,6 +15,7 @@ jobs:
     permissions:
       # Necessary to add label
       pull-requests: write
+      contents: write
 
     # For now, only run if the PR is merged
     if: github.event.pull_request.merged == true && startsWith(github.event.label.name, 'cherry-pick/')
@@ -26,4 +27,4 @@ jobs:
       git-user-email: "tom.lebreux@suse.com"
       git-user-name: "Tom Lebreux <tom.lebreux@suse.com>"
     secrets:
-      token: ${{ secrets.GH_TOKEN }}
+      token: ${{ secrets.GITHUB_TOKEN }}

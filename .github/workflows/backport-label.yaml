@@ -6,6 +6,7 @@ on:
     types: [labeled]
     # So I remember to only run this on PRs targetting release branches
     branches:
+    - test-backport-pr
     - test-main
     - 'test-release/**'
 

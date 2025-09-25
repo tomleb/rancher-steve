@@ -67,9 +67,11 @@ jobs:
 
       - if: ${{ steps.detect.outputs.target-branch != '' }}
         run: |
-          gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$target"
-          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: <url>"
+          gh pr edit $PR_NUMBER -R "$REPO" --add-label "cherry-pick-done/$TARGET"
+          gh pr comment $PR_NUMBER -R "$REPO" --body "Created the following cherry-pick PR: . See run for more details at: $RUN_URL"
         env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TARGET: ${{ steps.detect.outputs.target-branch }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}

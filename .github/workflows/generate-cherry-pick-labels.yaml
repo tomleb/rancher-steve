@@ -6,6 +6,9 @@ on:
 
 jobs:
   generate-cherry-pick-labels:
+    permissions:
+      # Necessary to create/edit labels
+      issues: write
     runs-on: ubuntu-latest
     steps:
       - run: |
@@ -33,3 +36,4 @@ jobs:
           REPO: ${{ github.repository }}
           COLOR: 38B395
           DONE_COLOR: E99695
+          GH_TOKEN: ${{ github.token }}

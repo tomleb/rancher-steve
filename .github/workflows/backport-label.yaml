@@ -22,8 +22,6 @@ jobs:
       #     fetch-depth: 0
 
       - run: |
-          echo $ALL_LABELS
-          echo $JUST_NAMES
           printf '%s\n' $ALL_LABELS
           printf '%s\n' $JUST_NAMES
           printf '%s' "$ALL_LABELS" | jq

@@ -47,7 +47,7 @@ jobs:
         env:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          CHERRY_PICK_LABEL: ${{ github.event.pull_request.label }}
+          CHERRY_PICK_LABEL: ${{ github.event.label.name }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 

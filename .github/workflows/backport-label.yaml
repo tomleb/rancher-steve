@@ -32,5 +32,7 @@ jobs:
       pr-number: ${{ github.event.pull_request.number }}
       git-user-email: "tom.lebreux@suse.com"
       git-user-name: "Tom Lebreux <tom.lebreux@suse.com>"
+      # TODO: Remove this when using this in rancher org
+      skip-membership-check: true
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}

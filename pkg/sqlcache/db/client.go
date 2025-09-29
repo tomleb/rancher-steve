@@ -18,12 +18,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+	"unsafe"
 
 	"github.com/sirupsen/logrus"
 
 	// needed for drivers
+	"modernc.org/libc"
 	_ "modernc.org/sqlite"
 	sqlite "modernc.org/sqlite"
+	"modernc.org/sqlite/lib"
 )
 
 const (
@@ -386,6 +390,16 @@ func closeRowsOnError(rows Rows, err error) error {
 	return err
 }
 
+func cFuncPointer[T any](f T) uintptr {
+	return *(*uintptr)(unsafe.Pointer(&struct{ f T }{f}))
+}
+
+func customBusyHandler(tls *libc.TLS, ptr uintptr, count int32) (r int32) {
+	fmt.Println("Custom busy handler called", count)
+	time.Sleep(10 * time.Millisecond)
+	return 1
+}
+
 // NewConnection checks for currently existing connection, closes one if it exists, removes any relevant db files, and opens a new connection which subsequently
 // creates new files.
 func (c *client) NewConnection(useTempDir bool) (string, error) {
@@ -436,9 +450,9 @@ func (c *client) NewConnection(useTempDir bool) (string, error) {
 		"_pragma=synchronous=off&"+
 		// do check foreign keys and honor ON DELETE CASCADE
 		"_pragma=foreign_keys=on&"+
-		// if two transactions want to write at the same time, allow 2 minutes for the first to complete
-		// before baling out
-		"_pragma=busy_timeout=120000&"+
+		// // if two transactions want to write at the same time, allow 2 minutes for the first to complete
+		// // before baling out
+		// "_pragma=busy_timeout=120000&"+
 		// store temporary tables to memory, to speed up queries making use
 		// of temporary tables (eg: when using DISTINCT)
 		"_pragma=temp_store=2&"+
@@ -484,6 +498,19 @@ func (c *client) NewConnection(useTempDir bool) (string, error) {
 			return parts[arg2], nil
 		},
 	)
+	sqlite.RegisterConnectionHook(func(conn sqlite.ExecQuerierContext, path string) error {
+		cVal := reflect.ValueOf(conn).Elem()
+		dbVal := cVal.FieldByName("db")
+		db := uintptr(dbVal.Uint())
+
+		tlsVal := cVal.FieldByName("tls")
+		tls := (*libc.TLS)(tlsVal.UnsafePointer())
+
+		sqlite3.Xsqlite3_busy_handler(tls, db, cFuncPointer(customBusyHandler), db)
+		(*sqlite3.Tsqlite3)(unsafe.Pointer(db)).FbusyTimeout = 0
+		return nil
+	})
+
 	c.conn = sqlDB
 	return dbPath, nil
 }

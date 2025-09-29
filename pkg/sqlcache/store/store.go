@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/rancher/lasso/pkg/log"
 	"github.com/rancher/steve/pkg/sqlcache/db"
@@ -322,6 +323,7 @@ func (s *Store) Add(obj any) error {
 	}
 
 	err = s.WithTransaction(s.ctx, true, func(tx db.TxClient) error {
+		time.Sleep(300 * time.Millisecond)
 		if err := s.Upsert(tx, s.upsertStmt, key, obj, s.shouldEncrypt); err != nil {
 			return err
 		}

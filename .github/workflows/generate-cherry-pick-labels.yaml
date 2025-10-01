@@ -9,7 +9,7 @@ jobs:
     permissions:
       # Necessary to create/edit labels
       issues: write
-    uses: tomleb/gha-tests/.github/workflows/generate-cherry-pick-labels.yaml@main
+    uses: tomleb/rancher-cherry-pick-action/.github/workflows/generate-cherry-pick-labels.yaml@label-action
     with:
       branch-filter-regex: "^test-main|test-release/.*"
     secrets:

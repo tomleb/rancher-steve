@@ -3,9 +3,6 @@ name: Backport label
 on:
   pull_request:
     types: [labeled]
-    branches:
-    - main
-    - 'release/**'
 
 jobs:
   backport-label:

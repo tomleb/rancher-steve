@@ -329,7 +329,7 @@ func (l *ListOptionIndexer) Watch(ctx context.Context, opts WatchOptions, events
 	// By early registering this watcher, this channel will buffer any new events while we are still backfilling old events.
 	// When we finish, calling backfillDone will write all events in the buffer, then listen to new events as normal.
 	const maxBufferSize = 100
-	watcherChannel, backfillDone, closeWatcher := watcherWithBackfill(ctx, eventsCh, maxBufferSize)
+	watcherChannel, backfillDone, closeWatcher := watcherWithBackfill(ctx, eventsCh, maxBufferSize, l.GetName())
 	defer closeWatcher()
 
 	l.lock.Lock()
@@ -445,7 +445,7 @@ func fromBytes(buf sql.RawBytes, typ reflect.Type) (reflect.Value, error) {
 
 // watcherWithBackfill creates a proxy channel that buffers events during a "backfill" phase
 // and then seamlessly transitions to live event processing.
-func watcherWithBackfill[T any](ctx context.Context, eventsCh chan<- T, maxBufferSize int) (chan T, func(), func()) {
+func watcherWithBackfill[T any](ctx context.Context, eventsCh chan<- T, maxBufferSize int, name string) (chan T, func(), func()) {
 	backfillCtx, signalBackfillDone := context.WithCancel(ctx)
 	watcherCh := make(chan T)
 	done := make(chan struct{})
@@ -506,6 +506,11 @@ func watcherWithBackfill[T any](ctx context.Context, eventsCh chan<- T, maxBuffe
 		for {
 			select {
 			case event, ok := <-watcherCh:
+				if name == "_v1_ConfigMap" {
+					time.Sleep(5 * time.Second)
+					fmt.Println("Exited", name)
+					return
+				}
 				if !ok {
 					return // watcherCh was closed.
 				}

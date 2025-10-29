@@ -457,7 +457,7 @@ func (c *client) NewConnection(useTempDir bool) (string, error) {
 		"_pragma=foreign_keys=on&"+
 		// if two transactions want to write at the same time, allow 2 minutes for the first to complete
 		// before baling out
-		"_pragma=busy_timeout=120000&"+
+		"_pragma=busy_timeout=20000&"+
 		// store temporary tables to memory, to speed up queries making use
 		// of temporary tables (eg: when using DISTINCT)
 		"_pragma=temp_store=2&"+

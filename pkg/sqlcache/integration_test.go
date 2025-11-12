@@ -33,6 +33,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sschema "k8s.io/apimachinery/pkg/runtime/schema"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -61,7 +62,9 @@ type IntegrationSuite struct {
 }
 
 func (i *IntegrationSuite) SetupSuite() {
-	i.testEnv = envtest.Environment{}
+	i.testEnv = envtest.Environment{
+		CRDDirectoryPaths: []string{"testdata/crds"},
+	}
 	restCfg, err := i.testEnv.Start()
 	i.Require().NoError(err, "error when starting env test - this is likely because setup-envtest wasn't done. Check the README for more information")
 	i.restCfg = restCfg
@@ -576,6 +579,182 @@ func (i *IntegrationSuite) TestProxyStore() {
 	cancel()
 	// Stop the registered refresher, otherwise we'll see an error
 	time.Sleep(2 * time.Second)
+}
+
+func (i *IntegrationSuite) TestProxyStoreUICatalog() {
+	ctx, cancel := context.WithCancel(i.T().Context())
+	defer cancel()
+
+	requireT := i.Require()
+	cols, err := common.NewDynamicColumns(i.restCfg)
+	requireT.NoError(err)
+
+	cf, err := client.NewFactory(i.restCfg, false)
+	requireT.NoError(err)
+
+	baseSchemas := types.EmptyAPISchemas()
+
+	ccache := clustercache.NewClusterCache(ctx, cf.AdminDynamicClient())
+
+	ctrl, err := server.NewController(i.restCfg, nil)
+	requireT.NoError(err)
+
+	asl := accesscontrol.NewAccessStore(ctx, true, ctrl.RBAC)
+	sf := schema.NewCollection(ctx, baseSchemas, asl)
+
+	err = resources.DefaultSchemas(ctx, baseSchemas, ccache, cf, sf, "")
+	requireT.NoError(err)
+
+	definitions.Register(ctx, baseSchemas, ctrl.K8s.Discovery(),
+		ctrl.CRD.CustomResourceDefinition(), ctrl.API.APIService())
+
+	summaryCache := summarycache.New(sf, ccache)
+	summaryCache.Start(ctx)
+
+	cacheFactory, err := factory.NewCacheFactoryWithContext(ctx, factory.CacheFactoryOptions{})
+	requireT.NoError(err)
+
+	proxyStore, err := sqlproxy.NewProxyStore(ctx, cols, cf, summaryCache, summaryCache, cacheFactory, true)
+	requireT.NoError(err)
+	requireT.NotNil(proxyStore)
+
+	resetCh := make(chan struct{}, 10)
+
+	uiPluginGVK := k8sschema.GroupVersionKind{
+		Group:   "catalog.cattle.io",
+		Version: "v1",
+		Kind:    "UIPlugin",
+	}
+	uiPluginGVR := k8sschema.GroupVersionResource{
+		Group:    "catalog.cattle.io",
+		Version:  "v1",
+		Resource: "uiplugins",
+	}
+	sqlSchemaTracker := schematracker.NewSchemaTracker(ResetFunc(func(gvk k8sschema.GroupVersionKind) error {
+		proxyStore.Reset(gvk)
+		if gvk == uiPluginGVK {
+			resetCh <- struct{}{}
+		}
+		return nil
+	}))
+
+	onSchemasHandler := func(schemas *schema.Collection) error {
+		var retErr error
+
+		err := ccache.OnSchemas(schemas)
+		retErr = errors.Join(retErr, err)
+
+		err = sqlSchemaTracker.OnSchemas(schemas)
+		retErr = errors.Join(retErr, err)
+
+		return retErr
+	}
+	schemacontroller.Register(ctx,
+		cols,
+		ctrl.K8s.Discovery(),
+		ctrl.CRD.CustomResourceDefinition(),
+		ctrl.API.APIService(),
+		ctrl.K8s.AuthorizationV1().SelfSubjectAccessReviews(),
+		onSchemasHandler,
+		sf)
+
+	err = ctrl.Start(ctx)
+	requireT.NoError(err)
+
+	dynamicClient, err := dynamic.NewForConfig(i.restCfg)
+	requireT.NoError(err)
+
+	uiPluginClient := dynamicClient.Resource(uiPluginGVR).Namespace("default")
+	foo, err := createUIPlugin(ctx, uiPluginClient, "foo", "0.2.2", "disabled")
+	requireT.NoError(err)
+
+	bar, err := createUIPlugin(ctx, uiPluginClient, "bar", "0.2.4", "enabled")
+	requireT.NoError(err)
+
+	var uiPluginSchema *types.APISchema
+	requireT.EventuallyWithT(func(c *assert.CollectT) {
+		uiPluginSchema = sf.Schema("catalog.cattle.io.uiplugin")
+		require.NotNil(c, uiPluginSchema)
+	}, 15*time.Second, 500*time.Millisecond)
+
+	tests := []struct {
+		query    string
+		expected []string
+	}{
+		{
+			query: "filter=metadata.fields.0~a",
+			expected: []string{
+				bar.GetName(),
+			},
+		},
+		{
+			query: "filter=metadata.fields.0~oo",
+			expected: []string{
+				foo.GetName(),
+			},
+		},
+		{
+			query: "filter=metadata.fields.3~disabled",
+			expected: []string{
+				foo.GetName(),
+			},
+		},
+	}
+	for _, test := range tests {
+		i.T().Run(test.query, func(t *testing.T) {
+			requireT := require.New(t)
+			req, err := http.NewRequest("GET", "http://localhost:8080?"+test.query, nil)
+			requireT.NoError(err)
+
+			apiOp := &types.APIRequest{
+				Request: req,
+			}
+			got, _, _, err := proxyStore.ListByPartitions(apiOp, uiPluginSchema, []partition.Partition{{Passthrough: true}})
+			requireT.NoError(err)
+			var gotNames []string
+			for _, gotObj := range got.Items {
+				fmt.Println(gotObj)
+				gotNames = append(gotNames, gotObj.GetName())
+			}
+			requireT.Equal(test.expected, gotNames)
+		})
+	}
+
+	_ = bar
+	_ = foo
+
+	cancel()
+	// Stop the registered refresher, otherwise we'll see an error
+	time.Sleep(2 * time.Second)
+}
+
+func createUIPlugin(ctx context.Context, client dynamic.ResourceInterface, name string, version string, state string) (*unstructured.Unstructured, error) {
+	obj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "catalog.cattle.io/v1",
+			"kind":       "UIPlugin",
+			"metadata": map[string]any{
+				"name":      name,
+				"namespace": "default",
+			},
+			"spec": map[string]any{
+				"plugin": map[string]any{
+					"name":    name,
+					"version": version,
+				},
+			},
+			"status": map[string]any{
+				"cacheState": state,
+			},
+		},
+	}
+	newObj, err := client.Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return nil, err
+	}
+	unstructured.SetNestedField(newObj.Object, newObj.GetGeneration(), "status", "observedGeneration")
+	unstructured.SetNestedField(newObj.Object, state, "status", "cacheState")
+	return client.UpdateStatus(ctx, newObj, metav1.UpdateOptions{})
 }
 
 func createPatch(oldCRD, newCRD *apiextensionsv1.CustomResourceDefinition) ([]byte, error) {

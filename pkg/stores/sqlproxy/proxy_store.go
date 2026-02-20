@@ -1062,7 +1062,7 @@ func (s *Store) ListByPartitions(apiOp *types.APIRequest, apiSchema *types.APISc
 		} else {
 			err = fmt.Errorf("listbyoptions %v: %w", gvk, err)
 		}
-	} else {
+	} else if opts.IncludeAssociatedData {
 		err = s.AugmentRelationships(ctx, gvk, list, apiOp)
 	}
 
@@ -1105,6 +1105,8 @@ func (s *Store) AugmentRelationships(ctx context.Context, gvk schema.GroupVersio
 		}
 		defer doneCache()
 		return podClusterInf.AugmentList(ctx, list, childInfo.gvk, childInfo.schemaName, childInfo.useSelectors)
+	} else {
+		logrus.Warnf("there is no associatedData defined for GVK %s", gvk)
 	}
 	return nil
 }

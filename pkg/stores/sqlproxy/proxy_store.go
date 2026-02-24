@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -1089,8 +1090,8 @@ func (s *Store) AugmentRelationships(ctx context.Context, gvk schema.GroupVersio
 	schemas1 := apiOp.Schemas
 	schemas2 := schemas1.Schemas
 	dependentSchema, ok := schemas2[childInfo.schemaName]
-	if !ok {
-		return fmt.Errorf("No schema name found for gvk %s", gvk)
+	if !ok || !slices.Contains(dependentSchema.Schema.ResourceMethods, "GET") {
+		return fmt.Errorf("no read-access for resource %s", childInfo.schemaName)
 	}
 	childResourceInf, doneCache, err := s.cacheForWithDeps(ctx, apiOp, dependentSchema)
 	if err != nil {

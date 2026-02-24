@@ -94,12 +94,12 @@ var (
 		},
 		gvkKey("", "v1", "Pod"): {
 			// TODO: Move these to commonIndexFields if GVKs other than jobs & pods need them
-			{"metadata", "state", "error"},
-			{"metadata", "state", "message"},
-			{"metadata", "state", "transitioning"},
-			"spec.containers.image": &informer.JSONPathField{Path: []string{"spec", "containers", "image"}},
-			"spec.nodeName":         &informer.JSONPathField{Path: []string{"spec", "nodeName"}},
-			"status.podIP":          &informer.JSONPathField{Path: []string{"status", "podIP"}},
+			"metadata.state.error":         &informer.JSONPathField{Path: []string{"metadata", "state", "error"}},
+			"metadata.state.message":       &informer.JSONPathField{Path: []string{"metadata", "state", "message"}},
+			"metadata.state.transitioning": &informer.JSONPathField{Path: []string{"metadata", "state", "transitioning"}},
+			"spec.containers.image":        &informer.JSONPathField{Path: []string{"spec", "containers", "image"}},
+			"spec.nodeName":                &informer.JSONPathField{Path: []string{"spec", "nodeName"}},
+			"status.podIP":                 &informer.JSONPathField{Path: []string{"status", "podIP"}},
 			// Restart count - UI field ID "metadata.fields[3]" or "metadata.fields[3][0]"
 			"metadata.fields[3]": &informer.ComputedField{
 				Name:         "metadata.fields[3]_0",
@@ -159,14 +159,12 @@ var (
 			"status.lastSuccessfulTime":                             &informer.JSONPathField{Path: []string{"status", "lastSuccessfulTime"}},
 		},
 		gvkKey("batch", "v1", "Job"): {
-			{"metadata", "annotations", "field.cattle.io/publicEndpoints"},
 			// TODO: Move these to commonIndexFields if GVKs other than jobs & pods need them
-			{"metadata", "state", "error"},
-			{"metadata", "state", "message"},
-			{"metadata", "state", "transitioning"},
-			{"spec", "template", "spec", "containers", "image"},
 			"metadata.annotations[field.cattle.io/publicEndpoints]": &informer.JSONPathField{Path: []string{"metadata", "annotations", "field.cattle.io/publicEndpoints"}},
-			"spec.template.spec.containers.image":                   &informer.JSONPathField{Path: []string{"spec", "template", "spec", "containers", "image"}},
+			"metadata.state.error":                &informer.JSONPathField{Path: []string{"metadata", "state", "error"}},
+			"metadata.state.message":              &informer.JSONPathField{Path: []string{"metadata", "state", "message"}},
+			"metadata.state.transitioning":        &informer.JSONPathField{Path: []string{"metadata", "state", "transitioning"}},
+			"spec.template.spec.containers.image": &informer.JSONPathField{Path: []string{"spec", "template", "spec", "containers", "image"}},
 		},
 		gvkKey("catalog.cattle.io", "v1", "App"): {
 			"spec.chart.metadata.name": &informer.JSONPathField{Path: []string{"spec", "chart", "metadata", "name"}},

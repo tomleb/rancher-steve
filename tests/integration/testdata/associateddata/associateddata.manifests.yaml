@@ -9,6 +9,7 @@ metadata:
   name: nginx-a
   namespace: associated-data-test
 spec:
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:
@@ -28,6 +29,7 @@ metadata:
   name: nginx-b
   namespace: associated-data-test
 spec:
+  podManagementPolicy: Parallel
   replicas: 2
   selector:
     matchLabels:
@@ -47,6 +49,7 @@ metadata:
   name: nginx-c
   namespace: associated-data-test
 spec:
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:

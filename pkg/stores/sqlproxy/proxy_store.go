@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"regexp"
-	"slices"
 	"strings"
 	"sync"
 
@@ -381,7 +380,7 @@ type SchemaCollection interface {
 type Cache interface {
 	// AugmentList takes a list of resources, and for some of them,
 	// adds related data to each item in the list
-	AugmentList(ctx context.Context, list *unstructured.UnstructuredList, childGVK schema.GroupVersionKind, childSchemaName string, useSelectors bool)
+	AugmentList(ctx context.Context, list *unstructured.UnstructuredList, childGVK schema.GroupVersionKind, childSchemaName string, useSelectors bool, accessList accesscontrol.AccessListByVerb) error
 
 	// ListByOptions returns objects according to the specified list options and partitions.
 	// Specifically:
@@ -1090,7 +1089,7 @@ func (s *Store) AugmentRelationships(ctx context.Context, gvk schema.GroupVersio
 	schemas1 := apiOp.Schemas
 	schemas2 := schemas1.Schemas
 	dependentSchema, ok := schemas2[childInfo.schemaName]
-	if !ok || !slices.Contains(dependentSchema.Schema.ResourceMethods, "GET") {
+	if !ok {
 		return fmt.Errorf("no read-access for resource %s", childInfo.schemaName)
 	}
 	childResourceInf, doneCache, err := s.cacheForWithDeps(ctx, apiOp, dependentSchema)
@@ -1098,7 +1097,8 @@ func (s *Store) AugmentRelationships(ctx context.Context, gvk schema.GroupVersio
 		return err
 	}
 	defer doneCache()
-	return childResourceInf.AugmentList(ctx, list, childInfo.gvk, childInfo.schemaName, childInfo.useSelectors)
+	accessList := accesscontrol.GetAccessListMap(dependentSchema)
+	return childResourceInf.AugmentList(ctx, list, childInfo.gvk, childInfo.schemaName, childInfo.useSelectors, accessList)
 }
 
 // WatchByPartitions returns a channel of events for a list or resource belonging to any of the specified partitions

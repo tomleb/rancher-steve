@@ -59,6 +59,8 @@ func (i *IntegrationSuite) TestAssociatedData() {
 	steveServer := httptest.NewServer(steveHandler)
 	defer steveServer.Close()
 
+	defer i.maybeStopAndDebug(steveServer.URL)
+
 	// Wait for pods to be ready and cache to sync
 	i.T().Log("Waiting for pods to be available in steve cache...")
 	i.Require().EventuallyWithT(func(c *assert.CollectT) {

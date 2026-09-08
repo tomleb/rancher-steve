@@ -71,6 +71,7 @@ func (i *IntegrationSuite) TestOwnershipCountMatchesList() {
 	authMiddleware := auth.ToMiddleware(auth.AuthenticatorFunc(impersonateOrAdmin))
 
 	steveHandler, err := server.New(ctx, i.restCfg, &server.Options{
+		SQLCache: true,
 		SQLCacheFactoryOptions: factory.CacheFactoryOptions{
 			GCInterval:  15 * time.Minute,
 			GCKeepCount: 1000,
